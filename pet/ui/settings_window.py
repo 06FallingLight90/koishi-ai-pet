@@ -113,9 +113,12 @@ class _ModelsFetchWorker(QObject):
     """子线程获取模型列表。"""
     finished = Signal(bool, list, str)  # 成功, 模型ID列表, 错误信息
 
-    def __init__(self, client):
+    def __init__(self, client, target: str = "primary"):
         super().__init__()
         self._client = client
+        # 本次请求对应的模型方案，随 worker 一起传递，
+        # 避免多线程回调时读取被后续请求覆盖的实例状态
+        self.target = target
 
     def run(self):
         try:
@@ -1300,17 +1303,19 @@ class SettingsWindow(QWidget):
         btn.setText("获取中…")
 
         self._models_thread = QThread()
-        self._models_worker = _ModelsFetchWorker(client)
+        self._models_worker = _ModelsFetchWorker(client, profile)
         self._models_worker.moveToThread(self._models_thread)
         self._models_thread.started.connect(self._models_worker.run)
-        # 用默认参数捕获本次请求的方案，避免依赖实例状态被后续请求覆盖
-        self._models_worker.finished.connect(
-            lambda ok, ids, err, t=profile: self._on_models_fetched(ok, ids, err, t))
+        # 连接绑定方法（QObject 接收者），保证槽在 GUI 主线程执行；
+        # 方案名从 sender() 上读取，避免实例状态竞态
+        self._models_worker.finished.connect(self._on_models_fetched)
         self._models_worker.finished.connect(self._models_thread.quit)
         self._models_thread.start()
 
     def _on_models_fetched(self, success: bool, model_ids: list, error_msg: str,
-                           target: str = "primary"):
+                           target: str | None = None):
+        if target is None:
+            target = getattr(self.sender(), "target", None) or "primary"
         btn = self._models_button(target)
         btn.setEnabled(True)
         btn.setText("获取列表")

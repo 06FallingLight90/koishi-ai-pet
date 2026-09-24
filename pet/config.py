@@ -12,9 +12,14 @@ logger = logging.getLogger(__name__)
 # hidden: False = 在 UI 中显示, True = 高级设置（仅 settings.json）
 _KEY_META = {
     "BRAIN":                     {"type": "str",      "default": "local",       "category": "connection", "needs_restart": False, "hidden": False, "description": "LLM 调用模式",                           "enum": ["local", "api", "ollama"]},
-    "LLM_MODEL":                 {"type": "str",      "default": "",            "category": "connection", "needs_restart": False, "hidden": False, "description": "LLM 模型名称",                           "placeholder": "mimo-v2.5"},
-    "LLM_KEY":                   {"type": "str",      "default": "",            "category": "connection", "needs_restart": False, "hidden": False, "description": "API Key"},
-    "LLM_URL":                   {"type": "str",      "default": "",            "category": "connection", "needs_restart": False, "hidden": False, "description": "API 地址(需兼容 OpenAI 格式)"},
+    "LLM_MODEL":                 {"type": "str",      "default": "",            "category": "connection", "needs_restart": False, "hidden": False, "description": "首选 LLM 模型名称",                       "placeholder": "mimo-v2.5"},
+    "LLM_KEY":                   {"type": "str",      "default": "",            "category": "connection", "needs_restart": False, "hidden": False, "description": "首选 API Key"},
+    "LLM_URL":                   {"type": "str",      "default": "",            "category": "connection", "needs_restart": False, "hidden": False, "description": "首选 API 地址(需兼容 OpenAI 格式)"},
+    "LLM_MODEL_ALT":             {"type": "str",      "default": "",            "category": "connection", "needs_restart": False, "hidden": False, "description": "备选 LLM 模型名称，留空则沿用首选",         "placeholder": "mimo-v2.5"},
+    "LLM_KEY_ALT":               {"type": "str",      "default": "",            "category": "connection", "needs_restart": False, "hidden": False, "description": "备选 API Key，留空则沿用首选"},
+    "LLM_URL_ALT":               {"type": "str",      "default": "",            "category": "connection", "needs_restart": False, "hidden": False, "description": "备选 API 地址(需兼容 OpenAI 格式)，留空则沿用首选"},
+    "LLM_ACTIVE_PROFILE":        {"type": "str",      "default": "primary",     "category": "connection", "needs_restart": False, "hidden": False, "description": "当前启用的模型方案",                     "enum": ["primary", "alternative"]},
+    "LLM_FALLBACK_ENABLED":      {"type": "bool",     "default": True,          "category": "connection", "needs_restart": False, "hidden": False, "description": "调用报错或超时重试时自动切换到备选模型"},
     "OLLAMA_BASE_URL":           {"type": "str",      "default": "http://localhost:11434/v1", "category": "connection", "needs_restart": False, "hidden": False, "description": "Ollama 服务地址"},
     "LLM_TIMEOUT":               {"type": "float",    "default": 20,            "category": "connection", "needs_restart": False, "hidden": False, "description": "LLM 请求超时(秒)"},
     "LLM_STREAM_TIMEOUT":        {"type": "float",    "default": 120,           "category": "connection", "needs_restart": False, "hidden": False, "description": "流式调用总超时(秒)，超过后降级到本地决策"},

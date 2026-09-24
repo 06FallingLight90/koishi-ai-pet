@@ -432,7 +432,7 @@ class SettingsWindow(QWidget):
         form.addRow("调用模式:", self._brain_combo)
 
         self._url_edit = self._line("LLM_URL", "https://api.example.com/v1")
-        form.addRow("API 地址:", self._url_edit)
+        form.addRow("首选 API 地址:", self._url_edit)
 
         self._ollama_url_edit = self._line("OLLAMA_BASE_URL", "http://localhost:11434/v1")
         form.addRow("Ollama 地址:", self._ollama_url_edit)
@@ -441,7 +441,7 @@ class SettingsWindow(QWidget):
         key_row = self._secret_row("LLM_KEY", "sk-...")
         self._llm_key_edit = self._fields["LLM_KEY"]
         self._key_toggle = key_row.itemAt(1).widget()  # 暴露给页面跳转用
-        form.addRow("API Key:", key_row)
+        form.addRow("首选 API Key:", key_row)
 
         # 模型名称 + 获取按钮
         model_row = QHBoxLayout()
@@ -452,9 +452,9 @@ class SettingsWindow(QWidget):
         self._btn_fetch_models = QPushButton("获取列表")
         self._btn_fetch_models.setStyleSheet(BUTTON_PRIMARY_QSS)
         self._btn_fetch_models.setFixedWidth(72)
-        self._btn_fetch_models.clicked.connect(self._fetch_models)
+        self._btn_fetch_models.clicked.connect(lambda: self._fetch_models("primary"))
         model_row.addWidget(self._btn_fetch_models)
-        form.addRow("模型名称:", model_row)
+        form.addRow("首选模型名称:", model_row)
 
         self._timeout_edit = self._line("LLM_TIMEOUT", "20", QDoubleValidator(1, 300, 1))
         self._timeout_edit.setMaxLength(5)
@@ -502,6 +502,57 @@ class SettingsWindow(QWidget):
 
         inner.addLayout(form)
 
+        # —— 模型方案：首选 / 备选 快速切换 ——
+        switch_group = QGroupBox("模型方案")
+        switch_layout = QVBoxLayout(switch_group)
+        switch_layout.setSpacing(6)
+
+        switch_row = QHBoxLayout()
+        self._label_active_profile = QLabel("当前启用：首选模型")
+        self._label_active_profile.setStyleSheet(f"color:{_COLOR_TEXT_SEC}; font-size:11px;")
+        switch_row.addWidget(self._label_active_profile)
+        switch_row.addStretch()
+        self._btn_switch_profile = QPushButton("切换到备选模型")
+        self._btn_switch_profile.setStyleSheet(BUTTON_PRIMARY_QSS)
+        self._btn_switch_profile.clicked.connect(self._on_switch_profile)
+        switch_row.addWidget(self._btn_switch_profile)
+        switch_layout.addLayout(switch_row)
+
+        self._fallback_check = self._check(
+            "LLM_FALLBACK_ENABLED", "调用报错/超时重试时自动切换到备选模型")
+        switch_layout.addWidget(self._fallback_check)
+
+        fallback_hint = QLabel("备选方案的地址/Key/模型名留空时，自动沿用首选方案对应项")
+        fallback_hint.setWordWrap(True)
+        fallback_hint.setStyleSheet(f"color:{_COLOR_TEXT_MUTED}; font-size:11px;")
+        switch_layout.addWidget(fallback_hint)
+
+        alt_form = QFormLayout()
+        alt_form.setSpacing(8)
+
+        self._alt_url_edit = self._line("LLM_URL_ALT", "https://api.example.com/v1")
+        alt_form.addRow("备选 API 地址:", self._alt_url_edit)
+
+        alt_key_row = self._secret_row("LLM_KEY_ALT", "sk-...")
+        self._alt_key_edit = self._fields["LLM_KEY_ALT"]
+        self._alt_key_toggle = alt_key_row.itemAt(1).widget()
+        alt_form.addRow("备选 API Key:", alt_key_row)
+
+        alt_model_row = QHBoxLayout()
+        self._alt_model_edit = QLineEdit()
+        self._alt_model_edit.setStyleSheet(INPUT_HIGHLIGHT_QSS)
+        self._fields["LLM_MODEL_ALT"] = self._alt_model_edit
+        alt_model_row.addWidget(self._alt_model_edit)
+        self._btn_fetch_models_alt = QPushButton("获取列表")
+        self._btn_fetch_models_alt.setStyleSheet(BUTTON_PRIMARY_QSS)
+        self._btn_fetch_models_alt.setFixedWidth(72)
+        self._btn_fetch_models_alt.clicked.connect(lambda: self._fetch_models("alternative"))
+        alt_model_row.addWidget(self._btn_fetch_models_alt)
+        alt_form.addRow("备选模型名称:", alt_model_row)
+
+        switch_layout.addLayout(alt_form)
+        inner.addWidget(switch_group)
+
         # 测试连接按钮
         test_row = QHBoxLayout()
         self._btn_test = QPushButton("测试连接")
@@ -537,9 +588,12 @@ class SettingsWindow(QWidget):
     def _on_mode_changed(self, mode: str):
         """根据调用模式启用/禁用对应字段。"""
         llm_fields = [self._url_edit, self._llm_key_edit, self._key_toggle,
+                      self._alt_url_edit, self._alt_key_edit, self._alt_key_toggle,
                       self._cache_check]
         ollama_fields = [self._ollama_url_edit]
         common_fields = [self._model_edit, self._btn_fetch_models,
+                         self._alt_model_edit, self._btn_fetch_models_alt,
+                         self._btn_switch_profile, self._fallback_check,
                          self._timeout_edit, self._retries_edit,
                          self._retry_delay_edit, self._retry_max_delay_edit,
                          self._temperature_edit,
@@ -563,6 +617,57 @@ class SettingsWindow(QWidget):
             for w in llm_fields + common_fields:
                 w.setEnabled(True)
         return w
+
+
+    def _update_profile_ui(self):
+        """刷新「当前启用方案」的按钮文案与状态标签。"""
+        active = getattr(config, "LLM_ACTIVE_PROFILE", "primary") or "primary"
+        if active == "alternative":
+            self._btn_switch_profile.setText("切换回首选模型")
+            model = config.LLM_MODEL_ALT or config.LLM_MODEL or "未配置"
+            self._label_active_profile.setText(f"当前启用：备选模型（{model}）")
+        else:
+            self._btn_switch_profile.setText("切换到备选模型")
+            model = config.LLM_MODEL or "未配置"
+            self._label_active_profile.setText(f"当前启用：首选模型（{model}）")
+
+    def _on_switch_profile(self):
+        """快速切换首选/备选模型方案，立即保存并重建客户端。"""
+        current = getattr(config, "LLM_ACTIVE_PROFILE", "primary") or "primary"
+        target = "alternative" if current == "primary" else "primary"
+        config.save("LLM_ACTIVE_PROFILE", target)
+        self._update_profile_ui()
+        self._rebuild_llm_client()
+        logger.info(f"[Settings] active LLM profile switched to {target}")
+
+    def _rebuild_llm_client(self):
+        """在后台线程重建 LLM 客户端，避免阻塞 GUI。"""
+        if not self.agent or not hasattr(self.agent, 'behavior'):
+            return
+
+        def _rebuild():
+            try:
+                self.agent.behavior.rebuild_client()
+            except Exception as e:
+                logger.exception(f"[Settings] rebuild_client failed: {e}")
+            logger.info("[Settings] rebuild_client complete")
+
+        t = threading.Thread(target=_rebuild, daemon=True, name="settings-rebuild")
+        t.start()
+
+    def _profile_form_values(self, profile: str) -> tuple[str, str, str]:
+        """按方案读取界面当前填写值 (key, url, model)，备选空项回退到首选。"""
+        primary = (self._llm_key_edit.text().strip(),
+                   self._url_edit.text().strip(),
+                   self._model_edit.text().strip())
+        if profile != "alternative":
+            return primary
+        alt = (self._alt_key_edit.text().strip(),
+               self._alt_url_edit.text().strip(),
+               self._alt_model_edit.text().strip())
+        if not any(alt):
+            return primary
+        return (alt[0] or primary[0], alt[1] or primary[1], alt[2] or primary[2])
 
 
     def _build_behavior_tab(self) -> QWidget:
@@ -843,6 +948,7 @@ class SettingsWindow(QWidget):
                 widget.setCurrentIndex(max(idx, 0))
             elif isinstance(widget, (QTextEdit, MarkdownEdit)):
                 widget.setPlainText(str(value))
+        self._update_profile_ui()
         self._take_snapshot()
 
     def _take_snapshot(self):
@@ -954,16 +1060,9 @@ class SettingsWindow(QWidget):
                 logger.exception(f"[Settings] scheduler.update_config failed: {e}")
 
         # LLM 客户端重建（在后台线程执行，避免阻塞 GUI）
-        if needs_rebuild_client and self.agent and hasattr(self.agent, 'behavior'):
-            def _rebuild():
-                try:
-                    self.agent.behavior.rebuild_client()
-                except Exception as e:
-                    logger.exception(f"[Settings] rebuild_client failed: {e}")
-                logger.info("[Settings] rebuild_client complete")
-
-            t = threading.Thread(target=_rebuild, daemon=True, name="settings-rebuild")
-            t.start()
+        if needs_rebuild_client:
+            self._rebuild_llm_client()
+        self._update_profile_ui()
 
         if needs_restart_keys:
             self._msg("设置已保存", "已保存。部分设置须重启后生效。")
@@ -984,14 +1083,13 @@ class SettingsWindow(QWidget):
             self._label_test.setText("未配置")
             return
 
-        # 从界面读取最新值
-        model = self._fields["LLM_MODEL"].text().strip()
+        # 从界面读取最新值（测试当前启用的方案）
+        profile = getattr(config, "LLM_ACTIVE_PROFILE", "primary") or "primary"
+        key, url, model = self._profile_form_values(profile)
         if brain_cfg == "ollama":
             url = self._fields["OLLAMA_BASE_URL"].text().strip()
             key = "ollama"
-        else:
-            url = self._fields["LLM_URL"].text().strip()
-            key = self._fields["LLM_KEY"].text().strip()
+        profile_name = "备选" if profile == "alternative" else "首选"
 
         if not model:
             self._test_output.clear()
@@ -1005,7 +1103,7 @@ class SettingsWindow(QWidget):
             timeout = 30.0
 
         self._test_output.clear()
-        self._test_output.append("测试中...")
+        self._test_output.append(f"测试中...（{profile_name}模型）")
         self._btn_test.setEnabled(False)
         self._label_test.setText("测试中...")
 
@@ -1162,7 +1260,16 @@ class SettingsWindow(QWidget):
         self._voice_btn_test.setEnabled(True)
 
 
-    def _fetch_models(self):
+    def _models_button(self, profile: str = "primary") -> QPushButton:
+        """返回指定方案取模型列表操作对应的按钮。"""
+        return self._btn_fetch_models_alt if profile == "alternative" else self._btn_fetch_models
+
+    def _set_model_value(self, profile: str, model_id: str):
+        """把选中的模型名写入对应方案的输入框。"""
+        edit = self._alt_model_edit if profile == "alternative" else self._model_edit
+        edit.setText(model_id)
+
+    def _fetch_models(self, profile: str = "primary"):
         if self._models_thread and self._models_thread.isRunning():
             return
 
@@ -1171,8 +1278,7 @@ class SettingsWindow(QWidget):
             self._msg("提示", "当前为 local 模式，无需远程模型。")
             return
 
-        url = self._fields["LLM_URL"].text().strip() if "LLM_URL" in self._fields else ""
-        key = self._fields["LLM_KEY"].text().strip() if "LLM_KEY" in self._fields else ""
+        key, url, _model = self._profile_form_values(profile)
         ollama_url = self._fields["OLLAMA_BASE_URL"].text().strip() if "OLLAMA_BASE_URL" in self._fields else ""
 
         if brain == "ollama":
@@ -1189,20 +1295,25 @@ class SettingsWindow(QWidget):
         from openai import OpenAI
         client = OpenAI(api_key=api_key, base_url=base_url, timeout=config.LLM_TIMEOUT)
 
-        self._btn_fetch_models.setEnabled(False)
-        self._btn_fetch_models.setText("获取中…")
+        btn = self._models_button(profile)
+        btn.setEnabled(False)
+        btn.setText("获取中…")
 
         self._models_thread = QThread()
         self._models_worker = _ModelsFetchWorker(client)
         self._models_worker.moveToThread(self._models_thread)
         self._models_thread.started.connect(self._models_worker.run)
-        self._models_worker.finished.connect(self._on_models_fetched)
+        # 用默认参数捕获本次请求的方案，避免依赖实例状态被后续请求覆盖
+        self._models_worker.finished.connect(
+            lambda ok, ids, err, t=profile: self._on_models_fetched(ok, ids, err, t))
         self._models_worker.finished.connect(self._models_thread.quit)
         self._models_thread.start()
 
-    def _on_models_fetched(self, success: bool, model_ids: list, error_msg: str):
-        self._btn_fetch_models.setEnabled(True)
-        self._btn_fetch_models.setText("获取列表")
+    def _on_models_fetched(self, success: bool, model_ids: list, error_msg: str,
+                           target: str = "primary"):
+        btn = self._models_button(target)
+        btn.setEnabled(True)
+        btn.setText("获取列表")
 
         if not success:
             self._msg("获取失败", f"无法获取模型列表：\n{error_msg}")
@@ -1216,12 +1327,11 @@ class SettingsWindow(QWidget):
         menu = QMenu(self)
         for mid in model_ids:
             action = menu.addAction(mid)
-            action.triggered.connect(lambda checked=False, m=mid: self._model_edit.setText(m))
+            action.triggered.connect(
+                lambda checked=False, m=mid, t=target: self._set_model_value(t, m))
 
         # 在按钮下方弹出
-        pos = self._btn_fetch_models.mapToGlobal(
-            self._btn_fetch_models.rect().bottomLeft()
-        )
+        pos = btn.mapToGlobal(btn.rect().bottomLeft())
         menu.exec(pos)
 
 

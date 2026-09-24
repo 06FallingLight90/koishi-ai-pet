@@ -38,11 +38,28 @@ def is_retryable(exception: BaseException) -> bool:
     return False
 
 
+def _notify_retry(on_retry, tag: str, exc: BaseException | None):
+    """在重试前通知调用方（用于切换到备选模型）。"""
+    if on_retry is None:
+        return
+    try:
+        on_retry(exc)
+    except Exception:
+        logger.exception(f"[{tag}] on_retry callback failed")
+
+
 def llm_retry(tag: str = "LLM"):
-    """非流式 LLM 调用的重试装饰器。"""
+    """非流式 LLM 调用的重试装饰器"""
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
+            on_retry = kwargs.pop("_on_retry", None)
+
+            def _before_sleep(retry_state):
+                before_sleep_log(logger, logging.WARNING)(retry_state)
+                exc = retry_state.outcome.exception() if retry_state.outcome else None
+                _notify_retry(on_retry, tag, exc)
+
             retryer = retry(
                 stop=stop_after_attempt(config.LLM_MAX_RETRIES),
                 wait=wait_exponential(
@@ -50,7 +67,7 @@ def llm_retry(tag: str = "LLM"):
                     max=config.LLM_RETRY_MAX_DELAY,
                 ),
                 retry=retry_if_exception(is_retryable),
-                before_sleep=before_sleep_log(logger, logging.WARNING),
+                before_sleep=_before_sleep,
                 reraise=True,
             )
             try:
@@ -120,36 +137,65 @@ def _create_with_watchdog(create_stream_fn, timeout: float):
 
 
 def llm_stream_with_retry(create_stream_fn, tag: str = "LLM",
-                          create_timeout: float | None = None):
-    """流式调用的重试包装"""
+                          create_timeout: float | None = None,
+                          on_retry=None):
+    """流式调用的重试包装。
+
+    on_retry(exc) 在每次重试前调用（含建流看门狗超时），返回 True 表示
+    已切换到备选方案；仅在切换成功时才允许对建流超时进行重试。
+    """
+    import time
+
     last_exception = None
-    for attempt in range(config.LLM_MAX_RETRIES):
+    total_attempts = max(1, config.LLM_MAX_RETRIES)
+    for attempt in range(total_attempts):
         try:
             if create_timeout and create_timeout > 0:
                 stream = _create_with_watchdog(create_stream_fn, create_timeout)
             else:
                 stream = create_stream_fn()
             return stream
-        except CreateStreamTimeout:
-            logger.error(
-                f"[{tag}] stream create watchdog timeout "
-                f"({create_timeout:.0f}s), giving up"
-            )
-            raise
-        except Exception as e:
+        except CreateStreamTimeout as e:
             last_exception = e
-            if not is_retryable(e):
+            # 已是最后一次尝试：直接放弃，不做无意义的备选切换
+            switched = False
+            if attempt + 1 < total_attempts and on_retry is not None:
+                try:
+                    switched = bool(on_retry(e))
+                except Exception:
+                    logger.exception(f"[{tag}] on_retry callback failed")
+            if not switched:
+                logger.error(
+                    f"[{tag}] stream create watchdog timeout "
+                    f"({create_timeout:.0f}s), giving up"
+                )
                 raise
             delay = min(
                 config.LLM_RETRY_DELAY * (2 ** attempt),
                 config.LLM_RETRY_MAX_DELAY,
             )
             logger.warning(
-                f"[{tag}] stream connect failed (attempt {attempt+1}/"
-                f"{config.LLM_MAX_RETRIES}): {type(e).__name__}: {e}, "
+                f"[{tag}] stream create timeout, switched to fallback model, "
                 f"retrying in {delay:.1f}s"
             )
-            import time
+            time.sleep(delay)
+        except Exception as e:
+            last_exception = e
+            if not is_retryable(e):
+                raise
+            # 已是最后一次尝试：直接放弃，不做无意义的备选切换
+            if attempt + 1 >= total_attempts:
+                break
+            _notify_retry(on_retry, tag, e)
+            delay = min(
+                config.LLM_RETRY_DELAY * (2 ** attempt),
+                config.LLM_RETRY_MAX_DELAY,
+            )
+            logger.warning(
+                f"[{tag}] stream connect failed (attempt {attempt+1}/"
+                f"{total_attempts}): {type(e).__name__}: {e}, "
+                f"retrying in {delay:.1f}s"
+            )
             time.sleep(delay)
 
     raise last_exception

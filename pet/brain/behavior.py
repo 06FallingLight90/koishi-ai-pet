@@ -86,6 +86,23 @@ class Behavior(BrainMixin):
         client_type = "None (local)" if not self._llm else f"{type(self._llm.client).__name__}(model={self._llm.model})"
         logger.info(f"[Behavior] rebuild_client: {client_type}")
 
+    def _on_llm_retry(self, exc: BaseException | None = None) -> bool:
+        """重试前切换到备选模型方案；返回是否发生了切换。
+
+        由 llm_retry / llm_stream_with_retry 在每次重试前回调，
+        覆盖调用报错、读超时与建流超时三种情况。
+        """
+        if not config.LLM_FALLBACK_ENABLED:
+            return False
+        switched = self._llm.activate_fallback()
+        if switched:
+            cause = type(exc).__name__ if exc is not None else "unknown"
+            logger.warning(
+                f"[Behavior] retry with alternative model: {self._llm.model} "
+                f"(profile={self._llm.effective_profile}, cause={cause})"
+            )
+        return switched
+
     @property
     def has_vision(self) -> bool:
         return self._llm.has_vision
@@ -296,18 +313,27 @@ class Behavior(BrainMixin):
 
     def _llm_call_stream(self, messages: list, max_tokens: int = 4000, tools: list = None,
                          thinking: bool | None = None):
-        self.llm_stats.increment()
         from pet.brain.llm_retry import llm_stream_with_retry
-        kwargs = {"model": self._llm.model, "messages": messages, "max_tokens": max_tokens,
-                   "temperature": config.LLM_TEMPERATURE, "stream": True,
-                   "stream_options": {"include_usage": True}}
-        if tools:
-            kwargs["tools"] = tools
-        self._apply_thinking_param(kwargs, thinking)
+
+        def _build_kwargs() -> dict:
+            # 每次尝试都按当前生效方案重建参数，回退到备选后模型名随之更新
+            kwargs = {"model": self._llm.model, "messages": messages, "max_tokens": max_tokens,
+                      "temperature": config.LLM_TEMPERATURE, "stream": True,
+                      "stream_options": {"include_usage": True}}
+            if tools:
+                kwargs["tools"] = tools
+            self._apply_thinking_param(kwargs, thinking)
+            return kwargs
+
+        def _create():
+            return self._create_completion(_build_kwargs())
+
+        self.llm_stats.increment()
         return llm_stream_with_retry(
-            lambda: self._create_completion(kwargs),
+            _create,
             tag="Behavior.stream",
             create_timeout=config.LLM_CREATE_TIMEOUT,
+            on_retry=self._on_llm_retry,
         )
 
     def _log_prompt_size(self, messages: list, tag: str):
@@ -345,12 +371,14 @@ class Behavior(BrainMixin):
                             max_tokens: int = 4000, thinking: bool | None = None,
                             enable_tools: bool | None = None) -> BehaviorOutput:
         t = datetime.now().strftime("%H:%M:%S")
+        self._llm.reset_effective()  # 新请求链从首选方案开始
         self._apply_cache_control(messages)
         self._dump_context(tag, messages)
         self._log_prompt_size(messages, tag)
         try:
             tools_param = self._build_tools_param(enable_tools)
-            resp = self._llm_call(messages, max_tokens=max_tokens, tools=tools_param, thinking=thinking)
+            resp = self._llm_call(messages, max_tokens=max_tokens, tools=tools_param,
+                                  thinking=thinking, _on_retry=self._on_llm_retry)
             msg = resp.choices[0].message
             content = msg.content or ""
             logger.info(f"[{t}] [Behavior] === LLM RESPONSE ({tag}) ===")
@@ -435,6 +463,7 @@ class Behavior(BrainMixin):
                                  thinking: bool | None = None,
                                  enable_tools: bool | None = None,
                                  cancel_check: callable = None) -> BehaviorOutput:
+        self._llm.reset_effective()  # 新请求链从首选方案开始
         self._apply_cache_control(messages)
         self._dump_context(tag, messages)
         self._log_prompt_size(messages, tag)
@@ -1015,8 +1044,10 @@ class Behavior(BrainMixin):
 
     def _llm_summarize(self, items: list[str]) -> str | None:
         """用 LLM 将多条历史上下文压缩为一句简洁摘要。"""
+        self._llm.reset_effective()  # 独立请求，不继承上一条链的备选回退状态
         messages = self.ctx.build_summary_messages(items)
-        resp = self._llm_call(messages, max_tokens=config.LLM_MAX_TOKENS_SUMMARY)
+        resp = self._llm_call(messages, max_tokens=config.LLM_MAX_TOKENS_SUMMARY,
+                              _on_retry=self._on_llm_retry)
         raw = resp.choices[0].message.content
         result = (raw or "").strip()
         if not result:

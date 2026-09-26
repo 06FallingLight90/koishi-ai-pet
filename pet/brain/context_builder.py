@@ -444,9 +444,9 @@ class ContextBuilder:
                 _t = config.SANITY_CRITICAL_THRESHOLD
                 mild = _t * 2 / 3
                 moderate = _t / 3
-                if value >= mild:        return "有点神神叨叨的，想被摸摸头来清醒一点。想用工具做点不寻常的事。"
-                elif value >= moderate:  return "脑子快炸了，想被摸摸头来清醒一点。想对空气说话，对着屏幕傻笑，手痒想搞破坏——翻翻可用工具，搜些荒诞的关键词，或者创建个奇怪的文件。"
-                else:                    return "理智彻底崩坏，控制不住自己，想被摸摸头来清醒一点。疯狂翻可用工具：搜猎奇、恐怖主题相关的东西、创建包含病娇、恐怖内容的文件、打开乱七八糟的网页，什么都想试试。"
+                if value >= mild:        return "有点神神叨叨的，想被摸摸头来清醒一点。念头开始发散，想说些不着边际的话。"
+                elif value >= moderate:  return "脑子快炸了，想被摸摸头来清醒一点。想对空气说话、对着屏幕傻笑，做点夸张但无害的事。"
+                else:                    return "理智彻底崩坏，控制不住自己，想被摸摸头来清醒一点。话语可以断裂、混乱，但只能做夸张无害的举动——绝不写或覆盖文件、打开未知网页、调用会改动用户环境的工具。"
             return None
 
         parts: list[str] = []

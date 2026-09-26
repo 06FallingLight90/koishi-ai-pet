@@ -46,7 +46,6 @@ class FoodManager(QObject):
 
         self._food: Optional[dict] = None
         self._food_window = None
-        self._last_event: Optional[str] = None
 
         self._tick_timer = None  # 主线程绑定后创建
 
@@ -301,9 +300,9 @@ class FoodManager(QObject):
                 self._trigger_self_fed(name)
 
     def _clear_food(self, event_text: Optional[str] = None):
-        """清空食物状态"""
-        if event_text:
-            self._last_event = event_text
+        """清空食物状态；event_text 非空时作为事件上报（吃到/变质）"""
+        if event_text and self._agent is not None:
+            TOOL_CTX.note_event("food", event_text)
         win = self._food_window
         self._food_window = None
         self._food = None
@@ -311,14 +310,6 @@ class FoodManager(QObject):
             try:
                 win.disappear()
             except RuntimeError:
-                pass
-
-    def _note_event(self, text: str):
-        """把事件写入上下文"""
-        if text and self._agent is not None:
-            try:
-                TOOL_CTX.add_context(f"[觅食] {text}")
-            except Exception:
                 pass
 
     def _trigger_self_fed(self, name: str):
@@ -341,27 +332,18 @@ class FoodManager(QObject):
             logger.warning(f"[Food] trigger interact failed: {e}")
 
     def describe(self) -> str:
-        """供 context_builder 注入 [觅食] 行；事件文本输出一次后清空并落库"""
-        lines = []
-        event_text = None
+        """供 context_builder 注入 [觅食] 实时行：进行中的食物位置/距离/剩余时间"""
         with self._lock:
-            if self._last_event:
-                lines.append(f"[觅食] {self._last_event}")
-                event_text = self._last_event
-                self._last_event = None
             food = self._food
-            if food is not None:
-                dx, direction = self._dx_to(food["center_x"])
-                dy, _ = self._dy_info(food["ground_y"])
-                remaining = max(0, int(food["ttl"] - (time.monotonic() - food["spawned_at"])))
-                lines.append(
-                    f"[觅食] 桌面上有一份{food['name']}：位置 x={food['x']} y={food['y']}，"
-                    f"在你{direction}侧 {dx}px，{self._height_hint(dy)}，{remaining}秒后过期"
-                )
-        # 锁外落库，避免持锁期间执行上下文写入
-        if event_text:
-            self._note_event(event_text)
-        return "\n".join(lines)
+            if food is None:
+                return ""
+            dx, direction = self._dx_to(food["center_x"])
+            dy, _ = self._dy_info(food["ground_y"])
+            remaining = max(0, int(food["ttl"] - (time.monotonic() - food["spawned_at"])))
+            return (
+                f"[觅食] 桌面上有一份{food['name']}：位置 x={food['x']} y={food['y']}，"
+                f"在你{direction}侧 {dx}px，{self._height_hint(dy)}，{remaining}秒后过期"
+            )
 
 
 FOOD = FoodManager()

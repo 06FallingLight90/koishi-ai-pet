@@ -21,13 +21,14 @@ class ContextBuilder:
     """
 
     def __init__(self, memory_store=None, screen_reader=None, vitals=None, mood=None,
-                 brain_mixin=None, head_pat_ts_fn=None):
+                 brain_mixin=None, recent_events_fn=None):
         self._memory_store = memory_store
         self._screen_reader = screen_reader
         self._vitals = vitals
         self._mood = mood
         self._brain = brain_mixin
-        self._head_pat_ts_fn = head_pat_ts_fn
+        self._recent_events_fn = recent_events_fn
+        self._active_needs: dict[str, float] = {}  # 未满足需求: key → 起始时间戳
 
     # public API
 
@@ -67,6 +68,25 @@ class ContextBuilder:
         ]
 
     _MAX_WINDOWS = 10  # 窗口探测上下文最多输出的窗口数
+
+    # 时间戳由 _recent_events_note 统一加在行首，文案本身不带「刚」等时效词
+    _EVENT_LABELS = {
+        "head_pat":  "用户摸了摸你的头",
+        "grabbed":   "用户把你抓了起来",
+        "released":  "用户把你放下了",
+        "window_lost": "你站的窗口消失了",
+        "fall":      "你摔了一跤",
+    }
+    _MAX_EVENT_LINES = 5  # 每次最多注入的最近事件条数
+
+    # 判定阈值须与 _build_feeling 的描述档位保持一致（>=60 两处都是中性档）
+    _NEED_LABELS = {
+        "hungry": "吃点东西",
+        "tired":  "歇一歇",
+        "bored":  "找点乐子",
+        "lonely": "想被陪陪",
+    }
+    _NEED_THRESHOLD = 60
 
     @staticmethod
     def build_window_context(pet_x: int, pet_y: int, pet_hwnd: int = 0) -> str:
@@ -161,7 +181,7 @@ class ContextBuilder:
 
     @staticmethod
     def _food_line() -> str:
-        """觅食状态行：食物位置/事件。不可用时返回空串，不影响决策。"""
+        """觅食实时行：进行中的食物位置。不可用时返回空串，不影响决策。"""
         try:
             from pet.food.food import FOOD
             return FOOD.describe()
@@ -236,26 +256,86 @@ class ContextBuilder:
         合并后消息列表以单条 system 开头，其余对话按时间顺序保留。
         """
         notes = [m["content"] for m in history_msgs if m.get("role") == "system"]
-        head_pat_note = self._head_pat_note()
-        if head_pat_note:
-            notes.append(head_pat_note)
         dialog = [m for m in history_msgs if m.get("role") != "system"]
         if notes:
             system = system + "\n\n[上下文备注]\n" + "\n".join(notes)
         return [{"role": "system", "content": system}, *dialog]
 
-    def _head_pat_note(self) -> str:
-        """用户在一个 mid_tick 周期内摸过头则返回带时间前缀的备注文本，否则返回空串。"""
-        if not self._head_pat_ts_fn:
+    def _recent_events_note(self) -> str:
+        """把窗口期内发生的事件整理为「最近发生了什么」章节正文。
+
+        同一类型只保留最近一次；按时间正序排列（倒序会把因果颠倒），
+        超过 _MAX_EVENT_LINES 时保留最近的若干条；文案优先取事件自带的 text。
+        """
+        if not self._recent_events_fn:
             return ""
-        last = self._head_pat_ts_fn()
-        if not last:
+        try:
+            events = self._recent_events_fn() or []
+        except Exception:
             return ""
-        window_s = config.SCHEDULER_MID_MS / 1000.0
-        if time.time() - last <= window_s:
-            time_str = BrainMixin._format_context_time(last)
-            return f"[{time_str}] 用户最近摸了你的头"
-        return ""
+        window_s = config.RECENT_EVENT_WINDOW_S
+        now = time.time()
+        latest: dict[str, tuple[float, str]] = {}
+        for kind, ts, text in events:
+            if now - ts > window_s:
+                continue
+            label = text or self._EVENT_LABELS.get(kind)
+            if not label:
+                continue
+            if kind not in latest or ts > latest[kind][0]:
+                latest[kind] = (ts, label)
+        if not latest:
+            return ""
+        ordered = sorted(latest.items(), key=lambda kv: kv[1][0])
+        if len(ordered) > self._MAX_EVENT_LINES:
+            ordered = ordered[-self._MAX_EVENT_LINES:]
+        return "\n".join(
+            f"[{BrainMixin._format_context_time(ts)}] {label}"
+            for kind, (ts, label) in ordered
+        )
+
+    def _build_needs_note(self) -> str:
+        """维护并输出「你惦记着的事」——未满足需求的持续张力。
+
+        低于阈值的需求首次出现时记录起始时间，恢复后移除；注入时带上已持续时长，
+        让桌宠对自己的需求是「惦记」而非每轮刷新出的新状态。
+        """
+        if not self._vitals or not self._mood:
+            return ""
+        try:
+            ns = self._vitals.numeric_summary()
+            ms = self._mood.numeric_summary()
+        except Exception:
+            return ""
+
+        current: set[str] = set()
+        if ns.get("satiety", 100) < self._NEED_THRESHOLD:
+            current.add("hungry")
+        if ns.get("energy", 100) < self._NEED_THRESHOLD:
+            current.add("tired")
+        if ms.get("joy", 100) < self._NEED_THRESHOLD:
+            current.add("bored")
+        if ms.get("affection", 100) < self._NEED_THRESHOLD:
+            current.add("lonely")
+
+        now = time.time()
+        for key in current:
+            self._active_needs.setdefault(key, now)
+        for key in list(self._active_needs):
+            if key not in current:
+                del self._active_needs[key]
+
+        if not self._active_needs:
+            return ""
+        lines = []
+        for key, start in self._active_needs.items():
+            label = self._NEED_LABELS.get(key, key)
+            elapsed = now - start
+            if elapsed < 60:
+                lines.append(f"- {label}（刚起念）")
+            else:
+                lines.append(f"- {label}（已持续 {BrainMixin._format_duration(elapsed)}）")
+        return "\n".join(lines)
 
     # internal
 
@@ -266,17 +346,22 @@ class ContextBuilder:
         # 人格驱动：始终注入当前感受到 FEELING_MARKER 锚点
         feeling = self._build_feeling()
         attention = self._build_attention_hint(task)
-        if feeling or attention:
-            status_lines = []
-            if feeling:
-                status_lines.append(feeling)
-            if attention:
-                status_lines.append(attention)
-            feeling_block = f"[你现在的状态]\n" + "\n".join(status_lines)
-            content = content.replace(
-                prompts.FEELING_MARKER,
-                feeling_block,
-            )
+        blocks: list[str] = []
+        status_lines = []
+        if feeling:
+            status_lines.append(feeling)
+        if attention:
+            status_lines.append(attention)
+        if status_lines:
+            blocks.append(f"[你现在的状态]\n" + "\n".join(status_lines))
+        needs = self._build_needs_note()
+        if needs:
+            blocks.append(f"[你惦记着的事]（你自己一直想做、还没做成的事）\n{needs}")
+        events = self._recent_events_note()
+        if events:
+            blocks.append(f"[最近发生了什么]\n{events}")
+        if blocks:
+            content = content.replace(prompts.FEELING_MARKER, "\n\n".join(blocks))
 
         if self._memory_store:
             memory_text = self._memory_store.retrieve_context(user_message)

@@ -61,7 +61,7 @@ class PetAgent(QObject):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._last_head_pat_ts: float = 0.0  # 最近一次用户摸头时间（wall-clock，用于时效判断与展示）
+        self._recent_events: list[tuple[str, float, str]] = []  # 供上下文注入的最近事件（wall-clock 时间戳）
         self._brain_busy_since: float | None = None  # 进入脑线程占用状态（autonomous/interacting）的时刻（monotonic）
         self._brain_progress_ts: float | None = None  # 最近一次管线进展的时刻（monotonic）
         self.memory_store = get_memory_store()
@@ -70,7 +70,7 @@ class PetAgent(QObject):
         self.screen_reader.enable()
         self.vitals = Vitals(parent=self)
         self.mood = Mood(parent=self)
-        self.behavior = Behavior(memory_store=self.memory_store, screen_reader=self.screen_reader, vitals=self.vitals, mood=self.mood, head_pat_ts_fn=self._head_pat_ts, progress_fn=self.note_brain_progress)
+        self.behavior = Behavior(memory_store=self.memory_store, screen_reader=self.screen_reader, vitals=self.vitals, mood=self.mood, recent_events_fn=self.recent_events, progress_fn=self.note_brain_progress)
         self.scheduler = Scheduler(self)
         self.state_machine = StateMachine(parent=self)
         self.state_machine.state_changed.connect(self.state_changed)
@@ -87,12 +87,25 @@ class PetAgent(QObject):
         self._last_interact_ms: dict[str, int] = {}
         self.state_machine.state_changed.connect(self._on_state_changed)
 
-    def note_head_pat(self):
-        """记录一次用户摸头（单击宠物），供上下文备注注入。"""
-        self._last_head_pat_ts = time.time()
+    _RECENT_EVENT_MAX = 16
 
-    def _head_pat_ts(self) -> float:
-        return self._last_head_pat_ts
+    def note_event(self, kind: str, text: str = ""):
+        """记录一次事件，供上下文「最近发生了什么」注入。
+
+        kind: 事件类型，展示层按它去重（同类型只留最近一次）；
+        text: 展示文案，留空则由 ContextBuilder 查内置文案表。
+        """
+        self._recent_events.append((kind, time.time(), text))
+        if len(self._recent_events) > self._RECENT_EVENT_MAX:
+            del self._recent_events[: len(self._recent_events) - self._RECENT_EVENT_MAX]
+
+    def recent_events(self) -> list[tuple[str, float, str]]:
+        """返回最近事件快照（脑线程构造上下文时读取）。"""
+        return list(self._recent_events)
+
+    def note_head_pat(self):
+        """记录一次用户摸头（单击宠物），供上下文注入。"""
+        self.note_event("head_pat")
 
     def set_pet_window(self, window):
         self._pet_window = window

@@ -59,6 +59,7 @@ class TimerTool:
                         msg = f"叮叮！「{label}」"
                         TOOL_CTX.speech(msg, duration=4000)
                         TOOL_CTX.notify("⏰ 定时器", label)
+                        TOOL_CTX.note_event("timer", f"你设的「{label}」定时器响了")
                         logger.info(f"[Timer] fired (restored): {tid} '{label}'")
 
                 self._timers[timer_id] = {
@@ -104,6 +105,7 @@ class TimerTool:
                 msg = f"叮叮！「{label_val}」"
                 TOOL_CTX.speech(msg, duration=4000)
                 TOOL_CTX.notify("⏰ 定时器", label_val)
+                TOOL_CTX.note_event("timer", f"你设的「{label_val}」定时器响了")
                 logger.info(f"[Timer] fired: {timer_id} '{label_val}'")
 
         with self._lock:

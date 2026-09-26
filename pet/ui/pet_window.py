@@ -204,8 +204,10 @@ class PetWindow(TransparentWindow):
         self.action_queue.clear()
         self.pet_actions.grabbed()
         logger.info("[PetWindow] grabbed")
-        if self._agent and self._event_reaction:
-            self._agent.trigger("interact", hint=self._PROMPT_GRABBED, is_play_loading=False, thinking=False, enable_tools=False)
+        if self._agent:
+            self._agent.note_event("grabbed")  # 事件记录独立于 LLM 反应开关
+            if self._event_reaction:
+                self._agent.trigger("interact", hint=self._PROMPT_GRABBED, is_play_loading=False, thinking=False, enable_tools=False)
 
     def _on_click_confirmed(self):
         """200ms 内无移动，判定为单击（摸头），并提升心理状态。"""
@@ -260,8 +262,10 @@ class PetWindow(TransparentWindow):
         if speed > 80:
             self.pet_actions.gravity.apply_impulse(vx, vy)
         logger.info(f"[PetWindow] released speed={speed:.0f}px/s flick={speed > 80}")
-        if self._agent and self._event_reaction:
-            self._agent.trigger("interact", hint=self._PROMPT_RELEASED, is_play_loading=False, thinking=False)
+        if self._agent:
+            self._agent.note_event("released")
+            if self._event_reaction:
+                self._agent.trigger("interact", hint=self._PROMPT_RELEASED, is_play_loading=False, thinking=False)
 
     def _show_context_menu(self, pos):
         """右键菜单。"""
@@ -400,10 +404,15 @@ class PetWindow(TransparentWindow):
 
     def _on_falling_started(self):
         self.action_queue.pause()
+        if self._agent:
+            # 与落地共用同一 kind，展示层同类型去重后只占一条
+            self._agent.note_event("fall", "你摔了下去")
 
     def _on_landed(self):
         self.action_queue.resume()
         self.particles.spawn("dust")
+        if self._agent:
+            self._agent.note_event("fall", "你摔了一跤")
 
     def _on_standing_lost(self, window_title: str):
         """站立窗口消失/被遮挡时，触发 LLM 交互反应。"""
@@ -411,8 +420,10 @@ class PetWindow(TransparentWindow):
         if window_title:
             hint += f"\n消失的窗口标题：「{window_title}」"
         logger.info(f"[PetWindow] standing_lost: \"{window_title}\"")
-        if self._agent and self._event_reaction:
-            self._agent.trigger("interact", hint=hint, is_play_loading=False, thinking=False, enable_tools=False)
+        if self._agent:
+            self._agent.note_event("window_lost")
+            if self._event_reaction:
+                self._agent.trigger("interact", hint=hint, is_play_loading=False, thinking=False, enable_tools=False)
 
 
     def queue_enqueue(self, method: str, *args, **kwargs):

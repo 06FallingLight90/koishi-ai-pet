@@ -80,6 +80,15 @@ class ToolContext:
         if self._check_agent():
             self._agent.behavior.add_context(role="system", content=text)
 
+    def note_event(self, kind: str, text: str = ""):
+        """工具侧上报事件，进入桌宠的「最近发生了什么」章节。
+
+        kind: 事件类型（同类型只保留最近一次，建议按工具命名，如 "timer"、"game"）；
+        text: 展示文案，可带动态参数（如「你设的「吃药」定时器响了」）。
+        """
+        if self._check_agent():
+            self._agent.note_event(kind, text)
+
     def request_interact(self, hint: str, delay_ms: int = 100,
                          cooldown_ms: int = 15000):
         if self._check_agent():

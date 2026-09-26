@@ -71,6 +71,7 @@ def _complete_with_notify(todo_id: int) -> dict:
         item = result.get("item", {})
         label = "已完成" if item.get("status") == "done" else "已恢复"
         TOOL_CTX.notify(f"待办{label}", item.get("title", ""))
+        TOOL_CTX.note_event("todo", f"待办「{item.get('title', '')}」{label}")
     return result
 
 

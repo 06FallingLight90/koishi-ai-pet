@@ -367,10 +367,19 @@ class GameBase:
         if result.pop("suppress_speech", False):
             return
         speech = result.pop("speech", None)
+        ended = result.get("ended")
+        # 对局结束事件上报（含胜负），供上下文「最近发生了什么」注入
+        if ended:
+            gname = game.name() if game else "游戏"
+            if result.get("forfeit"):
+                TOOL_CTX.note_event("game", f"你结束了和用户的{gname}对局")
+            elif result.get("won"):
+                TOOL_CTX.note_event("game", f"你和用户玩了{gname}，你赢了")
+            elif result.get("won") is False:
+                TOOL_CTX.note_event("game", f"你和用户玩了{gname}，你输了")
         if TOOL_CTX.is_model_aside_pending():
             return
         if not speech:
-            ended = result.get("ended")
             if result.get("forfeit"):
                 # 用户主动结束：播收场台词，而非败北台词
                 speech = game.forfeit_speech()

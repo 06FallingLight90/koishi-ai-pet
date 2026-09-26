@@ -914,6 +914,11 @@ class SettingsWindow(QWidget):
         te.setMinimumHeight(240)
         form.addWidget(te)
 
+        form.addWidget(QLabel("人格台词范例（每行一句，用于校准说话语感）"))
+        ex = self._text_area("PET_PERSONALITY_EXAMPLES")
+        ex.setMinimumHeight(120)
+        form.addWidget(ex)
+
         sep = QLabel()
         sep.setFixedHeight(8)
         form.addWidget(sep)

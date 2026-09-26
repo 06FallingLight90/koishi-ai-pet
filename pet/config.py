@@ -73,6 +73,7 @@ _KEY_META = {
     "LOG_LEVEL":                 {"type": "str",      "default": "DEBUG",       "category": "appearance", "needs_restart": False, "hidden": True,  "description": "日志级别(DEBUG/INFO/WARNING/ERROR)"},
     "CRASH_REPORT_ENABLED":      {"type": "bool",     "default": True,          "category": "appearance", "needs_restart": True,  "hidden": True,  "description": "启用崩溃信息收集(写入 logs/crash 目录)"},
     "PET_PERSONALITY":           {"type": "str",      "default": "",            "category": "personality", "needs_restart": False, "hidden": False, "description": "宠物人格描述(注入 system prompt)"},
+    "PET_PERSONALITY_EXAMPLES":  {"type": "str",      "default": "",            "category": "personality", "needs_restart": False, "hidden": False, "description": "人格台词范例(每行一句,注入 system prompt 校准语感)"},
     "XF_APPID":                  {"type": "str",      "default": "",            "category": "connection", "needs_restart": False, "hidden": False, "description": "讯飞语音听写 APPID"},
     "XF_API_KEY":                {"type": "str",      "default": "",            "category": "connection", "needs_restart": False, "hidden": False, "description": "讯飞语音听写 API Key"},
     "XF_API_SECRET":             {"type": "str",      "default": "",            "category": "connection", "needs_restart": False, "hidden": False, "description": "讯飞语音听写 API Secret"},
@@ -101,6 +102,7 @@ _KEY_META = {
     "FOOD_ENABLED":              {"type": "bool",     "default": True,           "category": "behavior", "needs_restart": True,  "hidden": False, "description": "觅食总开关（桌宠自主生成食物并吃掉），修改后需重启生效"},
     "FOOD_TTL_SECONDS":          {"type": "int",      "default": 300,            "category": "behavior", "needs_restart": False, "hidden": False, "description": "觅食食物存活秒数，超时未吃自动消失"},
     "ATTENTION_THRESHOLDS":      {"type": "str_list", "default": ["10", "20", "30"], "category": "behavior", "needs_restart": False, "hidden": False, "description": "连续未互动轮次阈值，达到后向桌宠注入求关注提示（如10/20/30轮）"},
+    "RECENT_EVENT_WINDOW_S":     {"type": "int",      "default": 900,           "category": "behavior", "needs_restart": False, "hidden": True,  "description": "「最近发生了什么」事件保鲜窗口(秒)，超过后不再注入"},
 }
 
 

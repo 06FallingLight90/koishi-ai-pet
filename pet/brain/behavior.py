@@ -54,7 +54,7 @@ class BehaviorOutput:
 class Behavior(BrainMixin):
 
     def __init__(self, memory_store=None, screen_reader=None, vitals=None, mood=None,
-                 head_pat_ts_fn=None, progress_fn=None):
+                 recent_events_fn=None, progress_fn=None):
         db_path = memory_store._db_path if memory_store else None
         super().__init__(db_path=db_path)
         self._llm = LLMClient()
@@ -69,7 +69,7 @@ class Behavior(BrainMixin):
         self.ctx = ContextBuilder(
             memory_store=memory_store, screen_reader=screen_reader,
             vitals=vitals, mood=mood, brain_mixin=self,
-            head_pat_ts_fn=head_pat_ts_fn,
+            recent_events_fn=recent_events_fn,
         )
         self.llm_stats = LlmStats()
 
@@ -645,7 +645,7 @@ class Behavior(BrainMixin):
                     actions.append(step)
             elif lower.startswith("speech:"):
                 raw = line.split(":", 1)[1].strip()
-                if raw.lower() not in ("none", "", "null"):
+                if raw.lower() not in ("none", "", "null", "无"):
                     speech_parts.append(raw)
             elif lower.startswith("summary:"):
                 summary = line.split(":", 1)[1].strip()
@@ -672,7 +672,9 @@ class Behavior(BrainMixin):
             return
         lower = line.lower()
         if lower.startswith("speech:"):
-            speech_parts.append(line.split(":", 1)[1].strip())
+            raw = line.split(":", 1)[1].strip()
+            if raw.lower() not in ("none", "", "null", "无"):
+                speech_parts.append(raw)
         elif lower.startswith("action:"):
             raw = line.split(":", 1)[1].strip()
             step = self._parse_action_line(raw)

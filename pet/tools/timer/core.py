@@ -37,6 +37,7 @@ class TimerTool:
             except Exception:
                 pass
 
+        offline_fires = []
         with self._lock:
             for row in rows:
                 fire_at = row["fire_at"]
@@ -68,7 +69,8 @@ class TimerTool:
                 }
 
                 if offline_seconds > 0 and remain > 1:
-                    _on_fire(tid=timer_id)
+                    # 离线期间已到点：锁内登记，锁外补发，避免 _on_fire 重入 _lock 死锁
+                    offline_fires.append(_on_fire)
                     continue
 
                 try:
@@ -77,6 +79,9 @@ class TimerTool:
                     logger.warning(f"[Timer] restore register failed: {row['id']}")
                     self._timers.pop(timer_id, None)
                     self._storage.remove(row["id"])
+
+        for fire in offline_fires:
+            fire()
 
         count = sum(1 for t in self._timers.values())
         if count > 0:

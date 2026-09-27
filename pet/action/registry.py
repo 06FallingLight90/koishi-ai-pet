@@ -147,6 +147,13 @@ def _build_duration_registry() -> dict[str, ActionDef]:
             params=[],
             usage_example="Action: shy",
         ),
+        "dejected": ActionDef(
+            name="dejected",
+            category="驻留",
+            description="失落，情绪低落地蹲着",
+            params=[],
+            usage_example="Action: dejected",
+        ),
     }
 
     # 动态生成带 duration 参数的动作

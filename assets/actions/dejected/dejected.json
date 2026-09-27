@@ -1,0 +1,7 @@
+{
+  "desc": "失落",
+  "tick_counts": 60,
+  "frame_ratios": [1],
+  "loop": false,
+  "note": "单次播放约 4 秒；配紫黑螺旋粒子（spiral，每 2 秒一发，所以能看到两圈）"
+}

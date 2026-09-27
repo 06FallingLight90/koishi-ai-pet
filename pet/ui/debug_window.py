@@ -363,7 +363,7 @@ class DebugWindow(QWidget):
         particle_layout = QVBoxLayout(particle_group)
 
         pbtn_row = QHBoxLayout()
-        for fx in ("dust", "stars", "zzz", "hearts"):
+        for fx in ("dust", "stars", "zzz", "hearts", "spiral"):
             btn = QPushButton(fx)
             btn.clicked.connect(lambda checked, e=fx: self._test_particle(e))
             pbtn_row.addWidget(btn)

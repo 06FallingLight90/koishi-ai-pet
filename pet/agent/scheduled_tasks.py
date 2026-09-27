@@ -18,6 +18,7 @@ _ACTION_PARTICLES: dict[str, tuple[str, int]] = {
     "calling":      ("notes", 2),
     "sleep":        ("zzz", 3),
     "bathing":      ("bubbles", 3),
+    "dejected":     ("spiral", 2),
 }
 
 

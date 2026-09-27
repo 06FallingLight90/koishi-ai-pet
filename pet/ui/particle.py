@@ -61,6 +61,27 @@ class Particle:
         self.y += self.vy * dt_ms / 30
 
 
+# 失落螺旋配色：暗紫 → 近黑
+_SPIRAL_COLORS = (
+    (92, 52, 140),
+    (140, 88, 200),
+    (52, 30, 80),
+    (36, 28, 52),
+    (168, 120, 220),
+)
+
+
+class _SpiralGlyph(Particle):
+    """漩涡图形粒子：只多带一个朝向，运动仍是直线 + 重力。"""
+
+    __slots__ = ("turn", "mirror")
+
+    def __init__(self, turn: float = 0.0, mirror: float = 1.0, **kwargs):
+        super().__init__(**kwargs)
+        self.turn = turn
+        self.mirror = mirror
+
+
 
 def _spawn_dust(cx: float, cy: float) -> list[Particle]:
     """落地灰尘：从脚底向上喷射后受重力下落。"""
@@ -180,6 +201,26 @@ def _spawn_dark_hearts(cx: float, cy: float) -> list[Particle]:
     return particles
 
 
+def _spawn_spiral(cx: float, cy: float) -> list[Particle]:
+    """失落漩涡：紫黑色小漩涡从头顶飘出，慢慢上浮后消散（同爱心）。"""
+    particles = []
+    for _ in range(random.randint(4, 6)):
+        particles.append(_SpiralGlyph(
+            turn=random.uniform(0, math.tau),
+            mirror=random.choice((1.0, -1.0)),
+            x=cx + random.uniform(-14, 14),
+            y=cy + random.uniform(-6, 6),
+            vx=random.uniform(-0.3, 0.3),
+            vy=-random.uniform(0.4, 0.8),
+            gravity=-0.01,
+            lifetime=random.randint(1200, 1800),
+            size=random.uniform(9, 14),
+            color=QColor(*random.choice(_SPIRAL_COLORS), random.randint(180, 230)),
+            shape="spiral",
+        ))
+    return particles
+
+
 def _spawn_question_marks(cx: float, cy: float) -> list[Particle]:
     """疑惑问号：从头顶缓慢上飘。"""
     particles = []
@@ -227,6 +268,20 @@ def _spawn_bubbles(cx: float, cy: float) -> list[Particle]:
     return particles
 
 
+# 特效名 → 生成函数（动作映射与调试面板都按这里的名字取用）
+_SPAWNERS = {
+    "dust": _spawn_dust,
+    "stars": _spawn_stars,
+    "zzz": _spawn_zzz,
+    "notes": _spawn_notes,
+    "hearts": _spawn_hearts,
+    "dark_hearts": _spawn_dark_hearts,
+    "question_marks": _spawn_question_marks,
+    "bubbles": _spawn_bubbles,
+    "spiral": _spawn_spiral,
+}
+
+
 def _draw_star(painter: QPainter, x: float, y: float, size: float, color: QColor, alpha: float):
     """绘制五角星。"""
     c = QColor(color)
@@ -261,6 +316,32 @@ def _draw_heart(painter: QPainter, x: float, y: float, size: float, color: QColo
 
 
 
+def _draw_spiral(painter: QPainter, x: float, y: float, size: float, color: QColor,
+                 alpha: float, turn: float = 0.0, mirror: float = 1.0):
+    """绘制漩涡：按段描边的阿基米德螺旋，线宽中段最粗、两端收细。"""
+    c = QColor(color)
+    c.setAlphaF(alpha)
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+
+    turns = 2.2
+    steps = 32
+    points = []
+    for i in range(steps + 1):
+        t = i / steps
+        theta = turn + mirror * t * turns * math.tau
+        radius = size * (0.12 + 0.88 * t)  # 内圈紧、外圈松
+        points.append(QPointF(x + math.cos(theta) * radius, y + math.sin(theta) * radius))
+
+    # 线宽上限只有尺寸的 16%：再宽就会吃掉圈间距，糊成一坨而不是漩涡
+    pen = QPen(c)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    for i, (p0, p1) in enumerate(zip(points, points[1:])):
+        t = (i + 0.5) / steps
+        pen.setWidthF(size * 0.16 * (0.25 + 0.75 * math.sin(math.pi * t) ** 0.6))
+        painter.setPen(pen)
+        painter.drawLine(p0, p1)
+
+
 def _draw_particle(painter: QPainter, p: Particle):
     """根据粒子类型绘制。"""
     alpha = p.alpha
@@ -278,6 +359,9 @@ def _draw_particle(painter: QPainter, p: Particle):
         _draw_star(painter, p.x, p.y, p.size, p.color, alpha)
     elif p.shape == "heart":
         _draw_heart(painter, p.x, p.y, p.size, p.color, alpha)
+    elif p.shape == "spiral":
+        _draw_spiral(painter, p.x, p.y, p.size, p.color, alpha,
+                     getattr(p, "turn", 0.0), getattr(p, "mirror", 1.0))
     elif p.shape == "text":
         font = QFont("Microsoft YaHei", int(p.size))
         painter.setFont(font)
@@ -339,23 +423,16 @@ class ParticleWidget(QWidget):
         "dark_hearts": 1 / 4,  # 头部附近
         "bubbles":         1 / 4,  # 头部附近
         "question_marks":  1 / 4,  # 头部附近
+        "spiral":          1 / 4,  # 头部附近（与爱心同一起点）
         "zzz":             1 / 2,  # 窗口中部
     }
 
     def spawn(self, effect: str, cx: float | None = None, cy: float | None = None):
         """触发粒子特效"""
-        spawner = {
-            "dust": _spawn_dust,
-            "stars": _spawn_stars,
-            "zzz": _spawn_zzz,
-            "notes": _spawn_notes,
-            "hearts": _spawn_hearts,
-            "dark_hearts": _spawn_dark_hearts,
-            "bubbles": _spawn_bubbles,
-            "question_marks": _spawn_question_marks,
-        }.get(effect)
+        spawner = _SPAWNERS.get(effect)
         if spawner is None:
-            logger.warning(f"Unknown particle effect: {effect!r}, expected one of dust/stars/zzz/notes/hearts/dark_hearts/bubbles/question_marks")
+            logger.warning(f"Unknown particle effect: {effect!r}, "
+                           f"expected one of {'/'.join(_SPAWNERS)}")
             return
 
         if cx is not None:

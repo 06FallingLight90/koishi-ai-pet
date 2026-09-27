@@ -452,6 +452,9 @@ class PetActions(QObject):
     def shy(self, *_, **_kw):
         self._anim.play("shy")
 
+    def dejected(self, *_, **_kw):
+        self._anim.play("dejected")
+
     def _fade_in_safety_check(self):
         try:
             if self._window.windowOpacity() < 0.1:

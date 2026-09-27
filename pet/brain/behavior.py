@@ -763,6 +763,9 @@ class Behavior(BrainMixin):
     })
     _META_TOOL_MAX_ROUNDS = 99  # 元工具调用安全上限
 
+    # 只读回忆类工具：结果本就在记忆库里，无需再写 Memory 行
+    _RECALL_TOOL_NAMES = frozenset({"recall__search", "recall__browse"})
+
     def _handle_tool_calls(self, messages, tool_calls_map, first_content,
                             on_chunk=None, on_stream_end=None, tag="",
                             max_rounds=5, max_tokens: int = 4000,
@@ -795,6 +798,8 @@ class Behavior(BrainMixin):
         real_round = 0  # 实际（非元工具）调用轮次计数
         meta_round = 0  # 元工具调用总轮次（安全防护）
         display_round = 0  # 仅用于日志展示
+        used_recall = False  # 整次工具循环里是否用过回忆类工具
+        recall_instruction_added = False
 
         while real_round < max_rounds:
             self._note_progress()  # 每轮工具调用都算进展，长流程不被看门狗误杀
@@ -905,9 +910,20 @@ class Behavior(BrainMixin):
                     except Exception:
                         pass
 
+                if tc["name"] in self._RECALL_TOOL_NAMES:
+                    used_recall = True
+
             # 非元工具轮次才计数
             if not all_meta:
                 real_round += 1
+
+            # 回忆结果衔接：想起的内容已在库里，避免模型再写一遍 Memory 行
+            if used_recall and not recall_instruction_added:
+                recall_instruction_added = True
+                current_messages.append({
+                    "role": "user",
+                    "content": "这些是你想起来的记忆，本来就在库里，自然说出来即可，不必再输出 Memory 行"
+                })
 
             # 最终轮精简指令：仅在至少执行过一个非元工具后追加
             if not all_meta and not final_instruction_added:

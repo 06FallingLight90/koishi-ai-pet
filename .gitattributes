@@ -3,3 +3,7 @@
 
 # Windows 批处理文件必须保持 CRLF，否则 cmd.exe 无法运行
 *.bat text eol=crlf
+
+# 测试目录只随仓库分发，不进 git archive / GitHub 源码包
+/tests/ export-ignore
+/tests/** export-ignore

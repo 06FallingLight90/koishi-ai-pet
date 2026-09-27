@@ -404,15 +404,10 @@ class PetWindow(TransparentWindow):
 
     def _on_falling_started(self):
         self.action_queue.pause()
-        if self._agent:
-            # 与落地共用同一 kind，展示层同类型去重后只占一条
-            self._agent.note_event("fall", "你摔了下去")
 
     def _on_landed(self):
         self.action_queue.resume()
         self.particles.spawn("dust")
-        if self._agent:
-            self._agent.note_event("fall", "你摔了一跤")
 
     def _on_standing_lost(self, window_title: str):
         """站立窗口消失/被遮挡时，触发 LLM 交互反应。"""
@@ -422,6 +417,7 @@ class PetWindow(TransparentWindow):
         logger.info(f"[PetWindow] standing_lost: \"{window_title}\"")
         if self._agent:
             self._agent.note_event("window_lost")
+            self._agent.note_event("fall", "你从窗口上掉了下来")
             if self._event_reaction:
                 self._agent.trigger("interact", hint=hint, is_play_loading=False, thinking=False, enable_tools=False)
 

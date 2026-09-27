@@ -75,7 +75,7 @@ class ContextBuilder:
         "grabbed":   "用户把你抓了起来",
         "released":  "用户把你放下了",
         "window_lost": "你站的窗口消失了",
-        "fall":      "你摔了一跤",
+        "fall":      "你从窗口上掉了下来",
     }
     _MAX_EVENT_LINES = 5  # 每次最多注入的最近事件条数
 

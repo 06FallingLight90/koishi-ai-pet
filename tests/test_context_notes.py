@@ -1,4 +1,4 @@
-"""上下文备注章节测试：最近事件、未满足需求、窗口标题提取。"""
+"""上下文备注章节测试：最近事件、未满足需求、作息困倦、旧事记忆、感受描述、窗口标题提取。"""
 
 import time
 from types import SimpleNamespace
@@ -18,11 +18,28 @@ class _FakeVitals:
 
 
 class _FakeMood:
-    def __init__(self, joy=100.0, affection=100.0):
-        self._data = {"joy": joy, "affection": affection}
+    def __init__(self, joy=100.0, affection=100.0, sanity=100.0):
+        self._data = {"joy": joy, "affection": affection, "sanity": sanity}
 
     def numeric_summary(self):
         return dict(self._data)
+
+
+class _FakeMemoryStore:
+    """只实现 ContextBuilder 用到的接口。"""
+
+    def __init__(self, rows=()):
+        self._rows = list(rows)
+
+    def random_events(self, limit=2, exclude_ids=None):
+        skip = set(exclude_ids or ())
+        return [r for r in self._rows if r["id"] not in skip][:limit]
+
+    def format_memory_time(self, created_at):
+        return "3天前"
+
+    def retrieve_context(self, user_message):
+        return ""
 
 
 class TestExtractWindowTitles:
@@ -96,10 +113,10 @@ class TestRecentEventsNote:
 
 
 class TestNeedsNote:
-    def _builder(self, satiety=100, energy=100, joy=100, affection=100):
+    def _builder(self, satiety=100, energy=100, joy=100, affection=100, sanity=100):
         return ContextBuilder(
             vitals=_FakeVitals(satiety, energy),
-            mood=_FakeMood(joy, affection),
+            mood=_FakeMood(joy, affection, sanity),
         )
 
     def test_no_vitals_or_mood_returns_empty(self):
@@ -142,3 +159,149 @@ class TestNeedsNote:
         broken = SimpleNamespace(numeric_summary=lambda: (_ for _ in ()).throw(RuntimeError("boom")))
         builder = ContextBuilder(vitals=broken, mood=_FakeMood())
         assert builder._build_needs_note() == ""
+
+    def test_low_sanity_mapped_to_need(self):
+        note = self._builder(sanity=5)._build_needs_note()
+        assert "脑子有点乱" in note
+        assert "摸摸头" in note
+
+    def test_sanity_uses_critical_threshold(self):
+        t = config.SANITY_CRITICAL_THRESHOLD
+        assert "脑子有点乱" not in self._builder(sanity=t)._build_needs_note()
+        assert "脑子有点乱" in self._builder(sanity=t - 1)._build_needs_note()
+
+    def test_line_carries_action_hint(self):
+        note = self._builder(satiety=10)._build_needs_note()
+        assert "自己生成食物" in note
+
+    def test_food_disabled_hint_only_begs_user(self, monkeypatch):
+        monkeypatch.setattr(config, "FOOD_ENABLED", False)
+        note = self._builder(satiety=10)._build_needs_note()
+        assert "讨点吃的" in note
+        assert "生成食物" not in note
+
+    def test_interact_task_excludes_needs_block(self):
+        builder = self._builder(satiety=10)
+        assert "你惦记着的事" not in builder._build_system("interact", "interact")
+        assert "你惦记着的事" in builder._build_system("chat_non_vision", "chat")
+
+    def test_bedtime_line_wired_into_note(self, monkeypatch):
+        monkeypatch.setattr(ContextBuilder, "_circadian_need",
+                            staticmethod(lambda hour: ("bedtime", "困了", "去睡")))
+        assert "困了（刚起念）→ 去睡" in self._builder()._build_needs_note()
+
+    def test_bedtime_suppresses_tired(self, monkeypatch):
+        monkeypatch.setattr(ContextBuilder, "_circadian_need",
+                            staticmethod(lambda hour: ("bedtime", "困了", "去睡")))
+        note = self._builder(energy=10)._build_needs_note()
+        assert "困了" in note
+        assert "歇一歇" not in note
+
+    def test_tired_kept_outside_bedtime(self, monkeypatch):
+        monkeypatch.setattr(ContextBuilder, "_circadian_need", staticmethod(lambda hour: None))
+        assert "歇一歇" in self._builder(energy=10)._build_needs_note()
+
+    def test_bedtime_cleared_after_window(self, monkeypatch):
+        builder = self._builder()
+        monkeypatch.setattr(ContextBuilder, "_circadian_need",
+                            staticmethod(lambda hour: ("bedtime", "困了", "去睡")))
+        assert "困了" in builder._build_needs_note()
+        monkeypatch.setattr(ContextBuilder, "_circadian_need", staticmethod(lambda hour: None))
+        assert builder._build_needs_note() == ""
+        assert builder._active_needs == {}
+
+
+class TestCircadianNeed:
+    @pytest.mark.parametrize("hour,label", [
+        (23, "困了"), (0, "困了"), (1, "熬夜太久了"), (5, "熬夜太久了"), (13, "犯困"),
+    ])
+    def test_window_labels(self, hour, label):
+        assert ContextBuilder._circadian_need(hour)[1] == label
+
+    @pytest.mark.parametrize("hour", [6, 9, 12, 14, 18, 22])
+    def test_outside_windows_returns_none(self, hour):
+        assert ContextBuilder._circadian_need(hour) is None
+
+    def test_night_stages_share_key(self):
+        # key 不变，「已持续」才能累计成熬夜时长
+        assert (ContextBuilder._circadian_need(23)[0]
+                == ContextBuilder._circadian_need(3)[0] == "bedtime")
+
+    def test_hints_point_to_sleep_action(self):
+        for hour in (23, 3, 13):
+            assert "sleep" in ContextBuilder._circadian_need(hour)[2]
+
+
+class TestFeelingNote:
+    def _builder(self, satiety=100, energy=100, joy=100, affection=100, sanity=100):
+        return ContextBuilder(
+            vitals=_FakeVitals(satiety, energy),
+            mood=_FakeMood(joy, affection, sanity),
+        )
+
+    def test_action_guides_only_in_needs_section(self):
+        feeling = self._builder(satiety=10, energy=10, joy=10)._build_feeling()
+        assert "food__spawn" not in feeling
+        assert "讨" not in feeling
+
+    def test_sanity_feeling_keeps_safety_norm(self):
+        feeling = self._builder(sanity=3)._build_feeling()
+        assert "绝不写或覆盖文件" in feeling
+        assert "摸摸头" not in feeling
+
+
+class TestEventMemoryNote:
+    def _row(self, mid, content):
+        return {"id": mid, "content": content, "created_at": ""}
+
+    def _builder(self, rows):
+        return ContextBuilder(memory_store=_FakeMemoryStore(rows))
+
+    def test_no_store_returns_empty(self):
+        assert ContextBuilder()._memory_event_note() == ""
+
+    def test_disabled_by_config(self, monkeypatch):
+        monkeypatch.setattr(config, "MEMORY_EVENT_RECALL_COUNT", 0)
+        assert self._builder([self._row(1, "旧事")])._memory_event_note() == ""
+
+    def test_empty_memory_returns_empty(self):
+        assert self._builder([])._memory_event_note() == ""
+
+    def test_store_exception_returns_empty(self):
+        broken = SimpleNamespace(random_events=lambda *a: (_ for _ in ()).throw(RuntimeError("boom")))
+        assert ContextBuilder(memory_store=broken)._memory_event_note() == ""
+
+    def test_line_carries_content_and_age(self):
+        note = self._builder([self._row(1, "用户上周带猫去看了医生")])._memory_event_note()
+        assert "- 用户上周带猫去看了医生（3天前）" in note
+
+    def test_previous_round_ids_skipped(self, monkeypatch):
+        monkeypatch.setattr(config, "MEMORY_EVENT_RECALL_COUNT", 1)
+        builder = self._builder([self._row(1, "旧事一"), self._row(2, "旧事二")])
+        assert "旧事一" in builder._memory_event_note()
+        assert "旧事二" in builder._memory_event_note()
+
+    def test_candidates_exhausted_falls_back_to_repeat(self, monkeypatch):
+        monkeypatch.setattr(config, "MEMORY_EVENT_RECALL_COUNT", 2)
+        builder = self._builder([self._row(1, "唯一旧事")])
+        builder._memory_event_note()
+        assert "唯一旧事" in builder._memory_event_note()
+
+    def test_injected_into_needs_section(self, monkeypatch):
+        monkeypatch.setattr(config, "MEMORY_EVENT_RECALL_COUNT", 1)
+        builder = ContextBuilder(
+            vitals=_FakeVitals(satiety=10), mood=_FakeMood(),
+            memory_store=_FakeMemoryStore([self._row(1, "用户上周带猫去看了医生")]),
+        )
+        system = builder._build_system("chat_non_vision", "chat")
+        head = system.index("[你惦记着的事]")
+        assert system.index("吃点东西") > head
+        assert system.index("用户上周带猫去看了医生") > head
+
+    def test_interact_task_excludes_memory_note(self, monkeypatch):
+        monkeypatch.setattr(config, "MEMORY_EVENT_RECALL_COUNT", 1)
+        builder = ContextBuilder(
+            vitals=_FakeVitals(), mood=_FakeMood(),
+            memory_store=_FakeMemoryStore([self._row(1, "唯一旧事")]),
+        )
+        assert "唯一旧事" not in builder._build_system("interact", "interact")

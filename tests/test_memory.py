@@ -165,3 +165,33 @@ class TestSaveFromLine:
         monkeypatch.setattr(retriever, "save", lambda *a: calls.append(a))
         retriever.save_from_line("")
         assert calls == []
+
+
+class TestRandomEvents:
+    @pytest.fixture
+    def store(self, case_db_path) -> MemoryStore:
+        store = MemoryStore(db_path=str(case_db_path))
+        store.save("event", "用户今天加班到很晚", ["加班"], 3, "L2")
+        store.save("event", "用户上周带猫去看了医生", ["猫"], 3, "L2")
+        store.save("user_fact", "用户住在杭州", ["杭州"], 5, "L1")
+        return store
+
+    def test_only_event_category_returned(self, store):
+        contents = [r["content"] for r in store.random_events(5)]
+        assert len(contents) == 2
+        assert "用户住在杭州" not in contents
+
+    def test_exclude_ids_filters_candidates(self, store):
+        ids = {r["id"] for r in store.random_events(5)}
+        assert store.random_events(5, exclude_ids=ids) == []
+
+    def test_zero_limit_returns_empty(self, store):
+        assert store.random_events(0) == []
+
+    def test_injection_does_not_touch_access_stats(self, store):
+        store.random_events(5)
+        rows, _ = store.list_memories()
+        assert all(r["access_count"] == 0 for r in rows)
+
+    def test_format_memory_time_delegates(self, store):
+        assert store.format_memory_time("") == ""

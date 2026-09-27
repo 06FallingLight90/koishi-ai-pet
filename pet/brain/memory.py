@@ -1506,6 +1506,30 @@ class MemoryStore:
         """查询一条记忆的有效重要性。"""
         return self._retriever._effective_importance(row)
 
+    def random_events(self, limit: int = 1, exclude_ids: Optional[set] = None) -> list[dict]:
+        """随机取几条 event 类记忆，供模型「忽然想起」时使用。
+
+        只读：不 touch、不计召回冷却，避免被动注入抬高 access_count 与有效权重。
+        """
+        if limit <= 0:
+            return []
+        where = "category = 'event'"
+        params: list = []
+        if exclude_ids:
+            where += " AND id NOT IN (%s)" % ",".join(["?"] * len(exclude_ids))
+            params.extend(exclude_ids)
+        with self._retriever._lock:
+            rows = self._retriever._conn.execute(
+                f"SELECT id, content, created_at FROM memories WHERE {where} "
+                f"ORDER BY RANDOM() LIMIT ?",
+                params + [limit],
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def format_memory_time(self, created_at: str) -> str:
+        """记忆时间戳 →「3小时前」这类简短描述。"""
+        return self._retriever._format_memory_time(created_at)
+
     def close(self):
         global _MEMORY_STORE
         self._retriever.close()

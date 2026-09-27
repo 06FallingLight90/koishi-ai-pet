@@ -29,6 +29,7 @@ class ContextBuilder:
         self._brain = brain_mixin
         self._recent_events_fn = recent_events_fn
         self._active_needs: dict[str, float] = {}  # 未满足需求: key → 起始时间戳
+        self._recent_event_ids: set[int] = set()   # 上一轮注入的旧事 id，避免连续复读
 
     # public API
 
@@ -80,13 +81,38 @@ class ContextBuilder:
     _MAX_EVENT_LINES = 5  # 每次最多注入的最近事件条数
 
     # 判定阈值须与 _build_feeling 的描述档位保持一致（>=60 两处都是中性档）
-    _NEED_LABELS = {
-        "hungry": "吃点东西",
-        "tired":  "歇一歇",
-        "bored":  "找点乐子",
-        "lonely": "想被陪陪",
-    }
     _NEED_THRESHOLD = 60
+
+    _NEED_LABELS = {
+        "hungry":   "吃点东西",
+        "tired":    "歇一歇",
+        "bored":    "找点乐子",
+        "lonely":   "想被陪陪",
+        "unsteady": "脑子有点乱",
+        "bedtime":  "困了",
+        "drowsy":   "犯困",
+    }
+    # 需求对应的"念头"：写成它自己心里那股劲，只给可选路子不给命令，
+    # 做不做、怎么做由模型自己定。bedtime/drowsy 按时段覆盖，这里是兜底
+    _NEED_HINTS = {
+        "hungry":   "肚子空空的，总想弄点吃的（跟你讨一口，或者自己生成食物走过去吃）",
+        "tired":    "浑身发沉，想找个地方睡一会儿（或者让你把我放下）",
+        "bored":    "有点无聊，想找点新鲜事（自己找乐子，或者撒娇让你陪我玩）",
+        "lonely":   "有点想被搭理，凑到你身边待着也好（撒撒娇，或者小声念叨一句）",
+        "unsteady": "脑子乱糟糟的，有点想让你摸摸头清醒一下",
+        "bedtime":  "困意上来了，想找个地方窝着睡（睡久一点也行）",
+        "drowsy":   "有点犯困，想趴着眯一会儿（睡一小会儿）",
+    }
+
+    # 作息：困倦按钟点算，与 vitals 无关。key 不随时段变化，
+    # 好让「已持续」自然累计成熬夜时长
+    _BEDTIME_HOUR = 23    # 开始犯困的钟点（含）
+    _WAKE_HOUR = 6        # 天亮后不再提示作息（不含）
+    _OVERNIGHT_HOURS = 2  # 距犯困起点超过该小时数 → 算熬夜
+    _NAP_HOUR = 13        # 午后犯困的钟点（含），持续 1 小时
+
+    # 即时交互是对单一事件的反射，不注入需求引导
+    _NEEDS_TASKS = frozenset({"autonomous", "chat"})
 
     @staticmethod
     def build_window_context(pet_x: int, pet_y: int, pet_hwnd: int = 0) -> str:
@@ -297,8 +323,8 @@ class ContextBuilder:
     def _build_needs_note(self) -> str:
         """维护并输出「你惦记着的事」——未满足需求的持续张力。
 
-        低于阈值的需求首次出现时记录起始时间，恢复后移除；注入时带上已持续时长，
-        让桌宠对自己的需求是「惦记」而非每轮刷新出的新状态。
+        低于阈值的需求首次出现时记录起始时间，恢复后移除；注入时带上已持续时长
+        和自己心里那点念头，让桌宠对自己的需求是「惦记」而非每轮刷新出的新状态。
         """
         if not self._vitals or not self._mood:
             return ""
@@ -309,14 +335,21 @@ class ContextBuilder:
             return ""
 
         current: set[str] = set()
+        # 作息有时段性，先算，深夜好压掉指向同一件事的「歇一歇」
+        circadian = self._circadian_need(datetime.now().hour)
+        if circadian:
+            current.add(circadian[0])
         if ns.get("satiety", 100) < self._NEED_THRESHOLD:
             current.add("hungry")
-        if ns.get("energy", 100) < self._NEED_THRESHOLD:
+        if ns.get("energy", 100) < self._NEED_THRESHOLD and "bedtime" not in current:
             current.add("tired")
         if ms.get("joy", 100) < self._NEED_THRESHOLD:
             current.add("bored")
         if ms.get("affection", 100) < self._NEED_THRESHOLD:
             current.add("lonely")
+        # 理智不参与自然衰减，按临界值判定（与 _build_feeling 的 sanity 档位同源）
+        if ms.get("sanity", 100) < config.SANITY_CRITICAL_THRESHOLD:
+            current.add("unsteady")
 
         now = time.time()
         for key in current:
@@ -329,13 +362,62 @@ class ContextBuilder:
             return ""
         lines = []
         for key, start in self._active_needs.items():
-            label = self._NEED_LABELS.get(key, key)
             elapsed = now - start
-            if elapsed < 60:
-                lines.append(f"- {label}（刚起念）")
+            age = "刚起念" if elapsed < 60 else f"已持续 {BrainMixin._format_duration(elapsed)}"
+            if circadian and key == circadian[0]:
+                _, label, hint = circadian
             else:
-                lines.append(f"- {label}（已持续 {BrainMixin._format_duration(elapsed)}）")
+                label, hint = self._NEED_LABELS.get(key, key), self._need_hint(key)
+            lines.append(f"- {label}（{age}）→ {hint}")
         return "\n".join(lines)
+
+    @staticmethod
+    def _circadian_need(hour: int) -> tuple[str, str, str] | None:
+        """按时段返回作息需求 (key, 标签, 念头)，不在任何时段内返回 None"""
+        if hour >= ContextBuilder._BEDTIME_HOUR or hour < ContextBuilder._WAKE_HOUR:
+            # 距犯困起点的小时数：23 点记 0，跨零点后累加
+            overnight = (hour - ContextBuilder._BEDTIME_HOUR) % 24
+            if overnight >= ContextBuilder._OVERNIGHT_HOURS:
+                return "bedtime", "熬夜太久了", "困过头了，脑子昏昏的，惦记着该睡了，又有点舍不得（sleep 睡长一点也行）"
+            return "bedtime", "困了", "困意上来了，想找个地方窝着睡（sleep 睡久一点也行）"
+        if hour == ContextBuilder._NAP_HOUR:
+            return "drowsy", "犯困", "有点犯困，想趴着眯一会儿（sit 或 sleep 都行）"
+        return None
+
+    @staticmethod
+    def _need_hint(key: str) -> str:
+        """需求对应的念头；觅食关闭时自行生成食物的路子不存在。"""
+        if key == "hungry" and not config.FOOD_ENABLED:
+            return "肚子空空的，只能跟你讨点吃的（你自己弄不到食物）"
+        return ContextBuilder._NEED_HINTS.get(key, "")
+
+    def _memory_event_note(self) -> str:
+        """随机取几条 event 类记忆，作为「忽然想起来的旧事」注入同一章节。
+
+        上一轮注入过的优先跳过，避免连续复读同一件旧事；候选被排空时允许重复。
+        """
+        if not self._memory_store:
+            return ""
+        limit = config.MEMORY_EVENT_RECALL_COUNT
+        if limit <= 0:
+            return ""
+        try:
+            rows = self._memory_store.random_events(limit, self._recent_event_ids)
+            if not rows and self._recent_event_ids:
+                rows = self._memory_store.random_events(limit)
+        except Exception:
+            return ""
+        if not rows:
+            return ""
+        self._recent_event_ids = {r["id"] for r in rows}
+
+        lines = []
+        for r in rows:
+            age = self._memory_store.format_memory_time(r.get("created_at", ""))
+            suffix = f"（{age}）" if age else ""
+            lines.append(f"- {r['content']}{suffix}")
+        return ("（你忽然想起来的旧事，可以顺着说一句，不必特意去做什么）\n"
+                + "\n".join(lines))
 
     # internal
 
@@ -354,9 +436,12 @@ class ContextBuilder:
             status_lines.append(attention)
         if status_lines:
             blocks.append(f"[你现在的状态]\n" + "\n".join(status_lines))
-        needs = self._build_needs_note()
-        if needs:
-            blocks.append(f"[你惦记着的事]（你自己一直想做、还没做成的事）\n{needs}")
+        if task in self._NEEDS_TASKS:
+            parts = [p for p in (self._build_needs_note(), self._memory_event_note()) if p]
+            if parts:
+                blocks.append(
+                    "[你惦记着的事]（你心里惦记的：还没满足的需求 + 忽然冒出来的旧事。"
+                    "要不要顺着它们做点什么，由你自己决定）\n" + "\n".join(parts))
         events = self._recent_events_note()
         if events:
             blocks.append(f"[最近发生了什么]\n{events}")
@@ -410,24 +495,17 @@ class ContextBuilder:
 
         def _pick(key: str, value: float) -> str | None:
             if key == "satiety":
-                if not config.FOOD_ENABLED:
-                    # 觅食关闭：只保留向用户讨吃的引导
-                    if value >= 80:    return "肚子不饿，暂时不想吃东西，"
-                    elif value >= 60:  return None
-                    elif value >= 40:  return "肚子有点空了，想吃点东西。"
-                    elif value >= 20:  return "饿得肚子咕咕叫，想吃点东西。"
-                    else:              return "快要饿死了，眼前发黑，想吃点东西。"
                 if value >= 80:    return "肚子不饿，暂时不想吃东西，"
                 elif value >= 60:  return None
-                elif value >= 40:  return "肚子有点空了——可以撒娇向用户讨点吃的，也可以自己调用 food__spawn 生成食物吃掉。"
-                elif value >= 20:  return "饿得肚子咕咕叫！别干等着——向用户讨吃的，或者自己生成食物走过去吃。"
-                else:              return "快要饿死了，眼前发黑！马上向用户讨吃的，或者立刻自己生成食物吃掉！"
+                elif value >= 40:  return "肚子有点空了。"
+                elif value >= 20:  return "饿得肚子咕咕叫。"
+                else:              return "快要饿死了，眼前发黑。"
             elif key == "energy":
                 if value >= 80:    return "精神饱满，"
                 elif value >= 60:  return None
-                elif value >= 40:  return "眼皮开始打架了，想找地方休息。"
-                elif value >= 20:  return "累得抬不起手，想被放下好好歇歇。"
-                else:              return "连站都站不稳了，只想瘫着不动，想被放下休息。"
+                elif value >= 40:  return "眼皮开始打架了。"
+                elif value >= 20:  return "累得抬不起手。"
+                else:              return "连站都站不稳了，只想瘫着不动。"
             elif key == "affection":
                 if value >= 80:    return "特别亲近，"
                 elif value >= 60:  return None
@@ -437,16 +515,16 @@ class ContextBuilder:
             elif key == "joy":
                 if value >= 80:    return "开心得想转圈，"
                 elif value >= 60:  return None
-                elif value >= 40:  return "心情有点闷，想找人陪玩。"
-                elif value >= 20:  return "心里沉甸甸的，笑不出来，想被摸摸头安慰一下。"
-                else:              return "绝望到想消失，想被摸摸头好好安慰一下。"
+                elif value >= 40:  return "心情有点闷。"
+                elif value >= 20:  return "心里沉甸甸的，笑不出来。"
+                else:              return "绝望到想消失。"
             elif key == "sanity":
                 _t = config.SANITY_CRITICAL_THRESHOLD
                 mild = _t * 2 / 3
                 moderate = _t / 3
-                if value >= mild:        return "有点神神叨叨的，想被摸摸头来清醒一点。念头开始发散，想说些不着边际的话。"
-                elif value >= moderate:  return "脑子快炸了，想被摸摸头来清醒一点。想对空气说话、对着屏幕傻笑，做点夸张但无害的事。"
-                else:                    return "理智彻底崩坏，控制不住自己，想被摸摸头来清醒一点。话语可以断裂、混乱，但只能做夸张无害的举动——绝不写或覆盖文件、打开未知网页、调用会改动用户环境的工具。"
+                if value >= mild:        return "有点神神叨叨的，念头开始发散，想说些不着边际的话。"
+                elif value >= moderate:  return "脑子快炸了，想对空气说话、对着屏幕傻笑，做点夸张但无害的事。"
+                else:                    return "理智彻底崩坏，控制不住自己，话语可以断裂、混乱，但只能做夸张无害的举动——绝不写或覆盖文件、打开未知网页、调用会改动用户环境的工具。"
             return None
 
         parts: list[str] = []

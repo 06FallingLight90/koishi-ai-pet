@@ -155,21 +155,31 @@ def animator():
 class TestBreathWiring:
     """走真实素材：确认 JSON 配置能传到动画器并按时发姿态。"""
 
-    def test_idle_declares_breath(self, animator):
+    def test_idle_declares_bob_only(self, animator):
         breath = animator._load_action("idle")["breath"]
-        assert breath == {"amplitude": 2, "scale_x": 1.01, "scale_y": 0.99, "period_ticks": 30}
+        assert breath["amplitude"] > 0
+        assert (breath["scale_x"], breath["scale_y"]) == (1.0, 1.0)
+        assert breath["period_ticks"] > 0
 
-    def test_pose_emitted_and_reset(self, animator):
+    def test_sleep_declares_stretch_only(self, animator):
+        breath = animator._load_action("sleep")["breath"]
+        assert breath["amplitude"] == 0
+        assert breath["scale_x"] > 1.0 > breath["scale_y"]
+        # 躺姿素材满宽（511/512），X 张太多会横向切边
+        assert breath["scale_x"] <= 1.02
+
+    def test_pose_emitted_at_peak_and_reset(self, animator):
+        breath = animator._load_action("idle")["breath"]
+        period = breath["period_ticks"]
         seen: list[tuple] = []
         animator.pose_changed.connect(lambda dy, sx, sy: seen.append((dy, sx, sy)))
 
         assert animator.play("idle", duration=1)
-        for _ in range(15):  # 周期 30 tick，半周期正好吸到最深
+        for _ in range(period // 2):  # 半周期处吸到最深处
             animator._next_frame()
         dy, sx, sy = seen[-1]
-        assert dy == -2
-        assert sx == pytest.approx(1.01)
-        assert sy == pytest.approx(0.99)
+        assert dy == -breath["amplitude"]
+        assert (sx, sy) == (1.0, 1.0)  # 待机只做位移
 
         animator.stop()
         assert seen[-1] == (0, 1.0, 1.0)

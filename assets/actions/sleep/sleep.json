@@ -3,6 +3,6 @@
   "tick_counts": 15,
   "frame_ratios": [1],
   "loop": true,
-  "breath": { "amplitude": 0, "scale_x": 1.008, "scale_y": 0.992, "period_ticks": 45 },
-  "note": "只做 0.8% 体积呼吸、不位移（躺着不该离地），3s一个来回，比待机更慢更深"
+  "breath": { "amplitude": 0, "scale_x": 1.015, "scale_y": 0.97, "period_ticks": 45 },
+  "note": "只做体积呼吸、不位移；躺姿包围盒是满宽的(511/512)，X 收到 1.5% 免得切边，Y 留 3%；3s一个来回"
 }

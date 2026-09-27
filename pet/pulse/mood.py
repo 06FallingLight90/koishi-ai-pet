@@ -36,8 +36,8 @@ class MoodDecayConfig:
     """
     joy_baseline: float = 50.0
     joy_per_tick: float = 2.0
-    affection_baseline: float = 60.0
-    affection_per_tick: float = 0.4
+    affection_baseline: float = 50.0
+    affection_per_tick: float = 0.2
     grace_seconds: float = 60.0         # 互动后免衰减秒数
     enabled: bool = True
 

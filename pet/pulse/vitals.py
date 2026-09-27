@@ -29,8 +29,8 @@ class Vitals(QObject):
     """生理数值系统，外部通过 modify 方法控制，_vitals_tick 按动作调整。"""
 
     ACTION_VITALS_DELTA: dict[str, tuple[float, float]] = {
-        "sleep":        (-0.003, +0.1),
-        "sit":          (-0.003, +0.1),
+        "sleep":        (-0.003, +0.05),
+        "sit":          (-0.003, 0),  # 不回精力：sit 是常用填充动作，回精力会让精力形同虚设
         "thinking":     (-0.003, -0.01),
         "look_around":  (-0.003, -0.01),
         "walk":         (-0.008, -0.1),

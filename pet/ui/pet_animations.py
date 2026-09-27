@@ -18,6 +18,7 @@
 
 import json
 import logging
+import math
 import os
 from pathlib import Path
 
@@ -38,6 +39,7 @@ class PetAnimator(QObject):
     animation_finished = Signal(str)
     animation_interrupted = Signal(str)
     frame_changed = Signal(QPixmap)
+    bob_changed = Signal(int)  # 呼吸位移（0 或负值，负值=上移）
 
     def __init__(self, pet_dir: str | None = None, parent=None):
         super().__init__(parent)
@@ -50,6 +52,12 @@ class PetAnimator(QObject):
         self._current_action: str = ""
         self._loop: bool = True
 
+        # 呼吸位移：按 tick 计算，只向上抬，避免脚底被窗口裁掉
+        self._tick_count: int = 0
+        self._bob_amplitude: int = 0
+        self._bob_period: int = 0
+        self._bob_now: int = 0
+
         self._frame_timer = QTimer(self)
         self._frame_timer.timeout.connect(self._next_frame)
 
@@ -57,7 +65,7 @@ class PetAnimator(QObject):
         self._duration_timer.setSingleShot(True)
         self._duration_timer.timeout.connect(self._on_duration_end)
 
-        self._cache: dict[str, dict] = {}      # action → {frames, tick_plan, loop, desc, note}
+        self._cache: dict[str, dict] = {}      # action → {frames, tick_plan, loop, bob_*}
 
 
     def play(self, action: str, duration: float | None = None) -> bool:
@@ -74,17 +82,25 @@ class PetAnimator(QObject):
 
         data = self._load_action(action)
         if not data:
+            # 缺帧或配置损坏：停掉旧动画，让调用方（动作队列）能看出没播起来
+            self._frame_timer.stop()
+            self._duration_timer.stop()
+            self._reset_bob()
             return False
 
         self._frame_timer.stop()
         self._duration_timer.stop()
+        self._reset_bob()
 
         self._frames = data["frames"]
         self._tick_plan = data["tick_plan"]
         self._loop = data["loop"]
+        self._bob_amplitude = data["bob_amplitude"]
+        self._bob_period = data["bob_period"]
         self._current_action = action
         self._current_frame = 0
         self._tick_in_frame = 0
+        self._tick_count = 0
 
         self.frame_changed.emit(self._frames[0])
 
@@ -99,6 +115,7 @@ class PetAnimator(QObject):
     def stop(self):
         self._frame_timer.stop()
         self._duration_timer.stop()
+        self._reset_bob()
 
     def has_frames(self, action: str) -> bool:
         return self._load_action(action) is not None
@@ -157,19 +174,26 @@ class PetAnimator(QObject):
             pixmap.setDevicePixelRatio(dpr)
             frames.append(pixmap)
 
-        if not self._validate_config(cfg, len(frames), action):
-            return None
-
+        cfg = self._sanitize_config(cfg, len(frames), action)
         tick_plan = self._build_tick_plan(cfg, len(frames))
+        bob_amplitude, bob_period = self._parse_bob(cfg, action)
         data = {
             "frames": frames,
             "tick_plan": tick_plan,
             "loop": cfg.get("loop", True),
+            "bob_amplitude": bob_amplitude,
+            "bob_period": bob_period,
         }
         self._cache[action] = data
         return data
 
-    def _build_tick_plan(self, cfg: dict, frame_count: int) -> list[int]:
+    @staticmethod
+    def _build_tick_plan(cfg: dict, frame_count: int) -> list[int]:
+        """按累计比例分配 tick。
+
+        逐帧独立取整在除不尽时会把差额全推给尾帧（如 8 帧 / 90 tick → 11×7 + 13），
+        累计取整把误差摊到各帧上（→ 11/12 交替）。
+        """
         tick_counts = cfg.get("tick_counts", 30)
         ratios = cfg.get("frame_ratios", [1.0 / frame_count] * frame_count)
 
@@ -178,47 +202,68 @@ class PetAnimator(QObject):
 
         tick_plan: list[int] = []
         allocated = 0
+        cumulative = 0.0
         for i in range(frame_count - 1):
-            ticks = max(1, round(ratios[i] * tick_counts))
+            cumulative += ratios[i]
+            target = int(cumulative * tick_counts + 0.5)
             ceiling = tick_counts - allocated - (frame_count - i - 1)
-            ticks = max(1, min(ticks, ceiling))
+            ticks = max(1, min(target - allocated, ceiling))
             tick_plan.append(ticks)
             allocated += ticks
         tick_plan.append(max(1, tick_counts - allocated))
         return tick_plan
 
-    def _validate_config(self, cfg: dict, frame_count: int, action: str) -> bool:
+    @staticmethod
+    def _sanitize_config(cfg: dict, frame_count: int, action: str) -> dict:
+        """把不合法的时间配置就地修正成可用值。
+
+        以前这里非法就返回 False，会让整个动作静默失效、动作队列一路干等到超时。
+        改成能修就修：比例不合法则等分，tick 不够则抬到帧数。
+        """
+        cfg = dict(cfg)
+
         ratios = cfg.get("frame_ratios")
         if ratios is not None:
-            if len(ratios) != frame_count:
-                logger.warning(
-                    f"Config mismatch for '{action}': "
-                    f"frame_ratios has {len(ratios)} entries but {frame_count} image files"
-                )
-                return False
-            total = sum(ratios)
-            if abs(total - 1.0) > 0.01:
-                logger.warning(
-                    f"Config mismatch for '{action}': "
-                    f"frame_ratios sum = {total:.3f}, expected 1.0"
-                )
-                return False
+            try:
+                values = [float(r) for r in ratios]
+            except (TypeError, ValueError):
+                values = []
+            if len(values) == frame_count and all(v > 0 for v in values):
+                total = sum(values)
+                if abs(total - 1.0) > 0.01:
+                    logger.warning(f"'{action}': frame_ratios sum = {total:.3f}，已按比例归一化")
+                    values = [v / total for v in values]
+                cfg["frame_ratios"] = values
+            else:
+                logger.warning(f"'{action}': frame_ratios 与 {frame_count} 帧不匹配，改为等分")
+                cfg.pop("frame_ratios", None)
 
-        tick_counts = cfg.get("tick_counts")
-        effective_len = len(ratios) if ratios else frame_count
-        if tick_counts is not None and tick_counts < effective_len * 3:
-            logger.info(
-                f"'{action}': tick_counts ({tick_counts}) is low relative to "
-                f"frame count ({effective_len}), frame_ratios may be flattened"
-            )
-        if tick_counts is not None and tick_counts < effective_len:
-            logger.warning(
-                f"Config mismatch for '{action}': "
-                f"tick_counts ({cfg['tick_counts']}) < frame count ({effective_len})"
-            )
-            return False
+        try:
+            tick_counts = max(1, int(cfg.get("tick_counts", 30)))
+        except (TypeError, ValueError):
+            logger.warning(f"'{action}': tick_counts 非法，改用 30")
+            tick_counts = 30
+        if tick_counts < frame_count:
+            logger.warning(f"'{action}': tick_counts ({tick_counts}) < 帧数 ({frame_count})，已抬到帧数")
+            tick_counts = frame_count
+        cfg["tick_counts"] = tick_counts
 
-        return True
+        return cfg
+
+    @staticmethod
+    def _parse_bob(cfg: dict, action: str) -> tuple[int, int]:
+        """读取呼吸配置 (幅值 px, 周期 tick)。
+
+        幅值上限 4px：贴图 1:1 撑满窗口，抬过头会顶出画面。
+        """
+        bob = cfg.get("bob") or {}
+        try:
+            amplitude = max(0, min(4, int(bob.get("amplitude", 0) or 0)))
+            period = max(0, min(900, int(bob.get("period_ticks", 0) or 0)))
+        except (TypeError, ValueError):
+            logger.warning(f"'{action}': bob 配置无效，已忽略")
+            return 0, 0
+        return amplitude, period
 
     def _config_exists(self, action: str) -> bool:
         return os.path.isfile(os.path.join(self._pet_dir, action, f"{action}.json"))
@@ -236,9 +281,12 @@ class PetAnimator(QObject):
 
     def _on_duration_end(self):
         self._frame_timer.stop()
+        self._reset_bob()
         self.animation_finished.emit(self._current_action)
 
     def _next_frame(self):
+        self._tick_count += 1
+        self._apply_bob()
         self._tick_in_frame += 1
         if self._tick_in_frame >= self._tick_plan[self._current_frame]:
             self._tick_in_frame = 0
@@ -248,6 +296,31 @@ class PetAnimator(QObject):
                     self._current_frame = 0
                 else:
                     self._frame_timer.stop()
+                    self._reset_bob()
                     self.animation_finished.emit(self._current_action)
                     return
             self.frame_changed.emit(self._frames[self._current_frame])
+
+    def _reset_bob(self):
+        """停播或切动作时把呼吸位移归零。"""
+        self._bob_amplitude = 0
+        self._bob_period = 0
+        if self._bob_now != 0:
+            self._bob_now = 0
+            self.bob_changed.emit(0)
+
+    @staticmethod
+    def _bob_offset(tick: int, amplitude: int, period: int) -> int:
+        """呼吸位移：sin² 曲线，整周期内只向上抬（负值），不向下沉。"""
+        if amplitude <= 0 or period <= 0:
+            return 0
+        phase = math.sin(math.pi * (tick % period) / period)
+        return -int(amplitude * phase * phase + 0.5)
+
+    def _apply_bob(self):
+        if not self._bob_amplitude:
+            return
+        dy = self._bob_offset(self._tick_count, self._bob_amplitude, self._bob_period)
+        if dy != self._bob_now:
+            self._bob_now = dy
+            self.bob_changed.emit(dy)

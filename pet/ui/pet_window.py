@@ -65,6 +65,29 @@ class StickyMenu(_FlatMenuBase):
             super().mouseReleaseEvent(event)
 
 
+class _SpriteLabel(QLabel):
+    """宠物贴图：按偏移绘制做呼吸，不动窗口以免干扰重力判定。"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._offset_y = 0
+
+    def set_offset(self, dy: int):
+        if dy != self._offset_y:
+            self._offset_y = dy
+            self.update()
+
+    def paintEvent(self, event):
+        pixmap = self.pixmap()
+        if self._offset_y == 0 or pixmap is None:
+            super().paintEvent(event)
+            return
+        painter = QPainter(self)
+        x = (self.width() - pixmap.width()) // 2
+        painter.drawPixmap(x, self._offset_y, pixmap)
+        painter.end()
+
+
 class PetWindow(TransparentWindow):
     def __init__(self):
         super().__init__()
@@ -149,12 +172,13 @@ class PetWindow(TransparentWindow):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        self.pet_label = QLabel()
+        self.pet_label = _SpriteLabel()
         self.pet_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.pet_label)
 
         self.pet_anim = PetAnimator(parent=self)
         self.pet_anim.frame_changed.connect(self.pet_label.setPixmap)
+        self.pet_anim.bob_changed.connect(self.pet_label.set_offset)
         self.particles = ParticleWidget(self)
         self.pet_actions = PetActions(self, self.pet_anim, parent=self)
         self.action_queue = ActionQueue(self.pet_actions, parent=self)

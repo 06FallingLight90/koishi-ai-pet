@@ -3,5 +3,6 @@
   "tick_counts": 60,
   "frame_ratios": [0.9, 0.1],
   "loop": true,
-  "note": "4s一个眨眼周期，闭眼时间约0.4s"
+  "bob": { "amplitude": 2, "period_ticks": 30 },
+  "note": "4s一个眨眼周期，闭眼时间约0.4s；2px呼吸，2s一个来回"
 }

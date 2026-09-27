@@ -121,16 +121,20 @@ class ActionQueue(QObject):
             self._actions.walk_finished.connect(self._on_action_done)
             self._waiting_gravity_walk = True
             # 超时保护
-            timeout_ms = max(1000, int(getattr(config, "ACTION_TIMEOUT_MS", 15000)))
-            self._timeout_timer.start(timeout_ms)
+            self._timeout_timer.start(self._anim_timeout_ms(kwargs))
+            return
+
+        # 贴图缺失/配置损坏时动画起不来，直接推进，别干等超时
+        if not self._actions._anim.is_playing:
+            logger.warning(f"[ActionQueue] '{name}' 没有可播放的帧动画，跳过")
+            self._run_next()
             return
 
         # 时间驱动：监听 PetAnimator.animation_finished
         self._actions._anim.animation_finished.connect(self._on_action_done)
         self._waiting_anim_finished = True
         self._actions.gravity.suppress_idle = True  # 防止重力 tick 覆盖 sleep/sit/thinking
-        timeout_ms = max(1000, int(getattr(config, "ACTION_TIMEOUT_MS", 15000)))
-        self._timeout_timer.start(timeout_ms)
+        self._timeout_timer.start(self._anim_timeout_ms(kwargs))
 
     def _on_action_done(self, *args):
         self._disconnect_active()
@@ -138,6 +142,19 @@ class ActionQueue(QObject):
         if self._actions.gravity.falling:
             return  # PetWindow 的 falling_started→pause + landed→resume 会继续队列
         self._run_next()
+
+    @staticmethod
+    def _anim_timeout_ms(kwargs: dict) -> int:
+        """动画超时兜底：动作自带 duration 时按它放宽。
+
+        sleep/bathing 允许的时长（最长 216s / 270s）本来就超过默认 90s，
+        不放宽它们会在超时点被强行打断。
+        """
+        base = max(1000, int(getattr(config, "ACTION_TIMEOUT_MS", 15000)))
+        duration = (kwargs or {}).get("duration")
+        if isinstance(duration, (int, float)) and duration > 0:
+            return max(base, int(duration * 1000) + 2000)
+        return base
 
     def _on_action_timeout(self):
         """动作超时保护"""

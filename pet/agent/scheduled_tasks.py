@@ -36,7 +36,6 @@ class ScheduledTasks:
         scheduler.register("fast", self._vitals_tick)
         scheduler.register("fast", self._update_idle_anim)
         scheduler.register("fast", self._spawn_particles)
-        scheduler.register("slow", self._wakeup)
         scheduler.register("slow", self._vitals_save)
         scheduler.register("slow", self._vitals_check)
         scheduler.register("slow", self._mood_save)
@@ -149,16 +148,6 @@ class ScheduledTasks:
     def _mood_check(self):
         self._agent.mood.apply_decay()   # 自然衰减（内部联动阈值检查）
         self._agent.mood.check_thresholds()
-
-    def _wakeup(self):
-        """定期唤醒：sleeping → idle，并 stretch。"""
-        ts = datetime.now().strftime("%H:%M:%S")
-        logger.info(f"[{ts}] [PetAgent] [slow_tick]")
-        sm = self._agent.state_machine
-        if sm.state == PetState.SLEEPING:
-            sm.transition(PetState.IDLE)
-            logger.info(f"[{ts}] [PetAgent] slow_tick: woke up, emitting stretch")
-            self._agent._emit_action("stretch", (), {})
 
     def _memory_maintenance(self):
         """定期维护记忆：L3 硬清理 + 容量控制。"""

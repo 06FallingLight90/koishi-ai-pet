@@ -1,6 +1,5 @@
 """轻量状态机"""
 
-from datetime import datetime
 from enum import Enum
 
 from PySide6.QtCore import QObject, Signal
@@ -8,7 +7,6 @@ from PySide6.QtCore import QObject, Signal
 
 class PetState(Enum):
     IDLE = "idle"
-    SLEEPING = "sleeping"
     AUTONOMOUS = "autonomous"
     INTERACTING = "interacting"
 
@@ -19,8 +17,7 @@ class StateMachine(QObject):
     state_changed = Signal(str)
 
     _TRANSITIONS = {
-        PetState.IDLE:        [PetState.SLEEPING, PetState.AUTONOMOUS, PetState.INTERACTING],
-        PetState.SLEEPING:    [PetState.IDLE],
+        PetState.IDLE:        [PetState.AUTONOMOUS, PetState.INTERACTING],
         PetState.AUTONOMOUS:  [PetState.IDLE, PetState.INTERACTING],
         PetState.INTERACTING: [PetState.IDLE, PetState.AUTONOMOUS],
     }
@@ -35,7 +32,7 @@ class StateMachine(QObject):
 
     @property
     def can_decide(self) -> bool:
-        return self._state not in (PetState.SLEEPING, PetState.AUTONOMOUS, PetState.INTERACTING)
+        return self._state not in (PetState.AUTONOMOUS, PetState.INTERACTING)
 
     def transition(self, new_state: PetState) -> bool:
         allowed = self._TRANSITIONS.get(self._state, [])

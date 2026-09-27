@@ -184,14 +184,6 @@ class PetAgent(QObject):
         if handler:
             handler(**kwargs)
 
-    def force_state(self, state_name: str):
-        from pet.agent.state import PetState
-        try:
-            st = PetState(state_name)
-        except ValueError:
-            return
-        self.state_machine.force(st)
-
     def _emit_action(self, name: str, args, kwargs):
         kw = dict(kwargs) if kwargs else {}
         arg_list = list(args or ())

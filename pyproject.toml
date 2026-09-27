@@ -37,6 +37,11 @@ dependencies = [
     "python-xlib; sys_platform == 'linux'",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+]
+
 [project.urls]
 Homepage = "https://github.com/Koishi007/koishi-ai-pet"
 
@@ -45,3 +50,7 @@ koishi = "pet.app:main"
 
 [tool.setuptools.packages.find]
 include = ["pet*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

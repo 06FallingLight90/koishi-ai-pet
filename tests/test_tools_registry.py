@@ -1,0 +1,180 @@
+"""工具框架契约测试：注册表检索、schema 生成、执行器容错。"""
+
+import time
+
+import pytest
+
+from pet.tools import executor as executor_mod
+from pet.tools.executor import ToolCall, ToolExecutor
+from pet.tools.registry import ToolRegistry
+
+
+def _echo(text: str = "") -> dict:
+    return {"summary": f"echo:{text}", "text": text}
+
+
+def _boom() -> dict:
+    raise RuntimeError("工具炸了")
+
+
+def _bad_signature(unknown_arg: str = "") -> dict:
+    return {"summary": unknown_arg}
+
+
+def _slow() -> dict:
+    time.sleep(0.5)
+    return {"summary": "太慢了"}
+
+
+def _with_image() -> dict:
+    return {"summary": "截图完成", "__image__": "QUJD",
+            "__image_mime__": "image/jpeg", "__context__": "已截图"}
+
+
+@pytest.fixture
+def registry() -> ToolRegistry:
+    reg = ToolRegistry()
+    reg.register("demo", "演示工具", group="test")
+    reg.add_method("demo", "echo", "回显文本", handler=_echo,
+                   args={"text": {"type": "str", "desc": "要回显的文本"}})
+    reg.add_method("demo", "count", "计数", handler=lambda n=1: {"summary": f"n={n}"},
+                   args={"n": {"type": "int", "desc": "次数"},
+                         "mode": {"type": "str", "desc": "模式",
+                                  "enum": ["fast", "slow"], "default": "fast"}})
+    reg.add_method("demo", "boom", "抛异常", handler=_boom)
+    reg.add_method("demo", "bad", "签名不匹配", handler=_bad_signature,
+                   args={"other": {"type": "str", "required": True}})
+    reg.add_method("demo", "slow", "慢方法", handler=_slow, timeout=0.05)
+    reg.add_method("demo", "shot", "带图", handler=_with_image)
+    return reg
+
+
+@pytest.fixture
+def executor(registry, monkeypatch) -> ToolExecutor:
+    monkeypatch.setattr(executor_mod, "TOOL_REGISTRY", registry)
+    return ToolExecutor()
+
+
+class TestRegistryLookup:
+    def test_get_method_by_double_underscore(self, registry):
+        method = registry.get_method("demo__echo")
+        assert method is not None
+        assert method.handler is _echo
+
+    def test_missing_separator_returns_none(self, registry):
+        assert registry.get_method("demo.echo") is None
+        assert registry.get_method("demo") is None
+
+    def test_unknown_tool_returns_none(self, registry):
+        assert registry.get_method("nope__echo") is None
+
+    def test_disabled_tool_not_resolvable(self, registry):
+        registry.set_enabled("demo", False)
+        assert registry.get_method("demo__echo") is None
+        assert "demo" in registry.disabled_set
+        registry.set_enabled("demo", True)
+        assert registry.get_method("demo__echo") is not None
+
+    def test_group_helpers(self, registry):
+        assert "test" in registry.get_groups()
+        assert [t.name for t in registry.get_tools_by_group("test")] == ["demo"]
+        assert registry.get_tool_group("demo") == "test"
+        assert registry.get_tool_group("missing") == "default"
+
+
+class TestOpenAiSchema:
+    def test_schema_types_and_required(self, registry):
+        tools = registry.to_openai_tools(groups={"test"})
+        by_name = {t["function"]["name"]: t["function"] for t in tools}
+        count_schema = by_name["demo__count"]["parameters"]
+        assert count_schema["properties"]["n"]["type"] == "integer"
+        assert count_schema["properties"]["mode"]["type"] == "string"
+
+    def test_default_and_enum_preserved(self, registry):
+        tools = registry.to_openai_tools(groups={"test"})
+        by_name = {t["function"]["name"]: t["function"] for t in tools}
+        mode = by_name["demo__count"]["parameters"]["properties"]["mode"]
+        assert mode["enum"] == ["fast", "slow"]
+        assert mode["default"] == "fast"
+
+    def test_groups_filter_excludes_other_groups(self, registry):
+        registry.register("other", "其他工具", group="other")
+        registry.add_method("other", "ping", "ping", handler=lambda: {"summary": "pong"})
+        names = {t["function"]["name"] for t in registry.to_openai_tools(groups={"test"})}
+        assert "other__ping" not in names
+        assert "demo__echo" in names
+
+
+class TestExecutorRouting:
+    def test_unknown_tool(self, executor):
+        result = executor.execute([ToolCall("nope__go", {})])[0]
+        assert result.success is False
+        assert "unknown tool" in result.error
+
+    def test_successful_call(self, executor):
+        result = executor.execute([ToolCall("demo__echo", {"text": "hi"})])[0]
+        assert result.success is True
+        assert result.data["text"] == "hi"
+
+    def test_argument_validation_failure(self, executor):
+        result = executor.execute([ToolCall("demo__count", {"n": "不是数字"})])[0]
+        assert result.success is False
+        assert "类型错误" in result.error
+
+    def test_type_error_reported_as_signature_mismatch(self, executor):
+        # 参数名与 handler 签名不匹配 → handler 抛 TypeError
+        result = executor.execute([ToolCall("demo__bad", {"other": "x"})])[0]
+        assert result.success is False
+        assert "参数不匹配" in result.error
+
+    def test_runtime_error_propagated_as_message(self, executor):
+        result = executor.execute([ToolCall("demo__boom", {})])[0]
+        assert result.success is False
+        assert "工具炸了" in result.error
+
+    def test_timeout_reported(self, executor):
+        result = executor.execute([ToolCall("demo__slow", {})])[0]
+        assert result.success is False
+        assert "超时" in result.error
+
+    def test_image_and_context_extracted_from_data(self, executor):
+        result = executor.execute([ToolCall("demo__shot", {})])[0]
+        assert result.image_b64 == "QUJD"
+        assert result.image_mime == "image/jpeg"
+        assert result.context_brief == "已截图"
+        assert "__image__" not in result.data
+        assert "__context__" not in result.data
+
+    def test_multiple_calls_all_reported(self, executor):
+        results = executor.execute([
+            ToolCall("demo__echo", {"text": "a"}),
+            ToolCall("demo__boom", {}),
+        ])
+        assert [r.success for r in results] == [True, False]
+
+
+class TestNormalizeAndFormat:
+    def test_dict_with_summary(self):
+        assert ToolExecutor._normalize({"summary": "完成", "n": 1}) == '完成\n{"n": 1}'
+
+    def test_dict_without_summary(self):
+        assert ToolExecutor._normalize({"n": 1}) == '{"n": 1}'
+
+    def test_str_passthrough(self):
+        assert ToolExecutor._normalize("原文") == "原文"
+
+    def test_format_results_success_and_failure_lines(self, executor):
+        results = executor.execute([
+            ToolCall("demo__echo", {"text": "x"}),
+            ToolCall("demo__boom", {}),
+        ])
+        text, images = ToolExecutor.format_results(results)
+        assert "[OK demo__echo]" in text
+        assert "[FAIL demo__boom]" in text
+        assert images == []
+
+    def test_format_results_emits_image_uri(self, executor):
+        results = executor.execute([ToolCall("demo__shot", {})])
+        text, images = ToolExecutor.format_results(results)
+        assert images == ["data:image/jpeg;base64,QUJD"]
+        assert "附图" in text

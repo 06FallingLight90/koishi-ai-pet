@@ -3,6 +3,6 @@
   "tick_counts": 15,
   "frame_ratios": [1],
   "loop": true,
-  "bob": { "amplitude": 2, "period_ticks": 45 },
-  "note": "2px呼吸，3s一个来回，比待机更慢更深"
+  "breath": { "amplitude": 0, "scale_x": 1.008, "scale_y": 0.992, "period_ticks": 45 },
+  "note": "只做 0.8% 体积呼吸、不位移（躺着不该离地），3s一个来回，比待机更慢更深"
 }

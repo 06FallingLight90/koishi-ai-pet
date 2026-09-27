@@ -3,6 +3,6 @@
   "tick_counts": 60,
   "frame_ratios": [0.9, 0.1],
   "loop": true,
-  "bob": { "amplitude": 1, "period_ticks": 36 },
-  "note": "1px呼吸，2.4s一个来回"
+  "breath": { "amplitude": 0, "scale_x": 1.005, "scale_y": 0.995, "period_ticks": 36 },
+  "note": "只做 0.5% 体积呼吸、不位移（坐着不该离开地面），2.4s一个来回"
 }

@@ -62,38 +62,66 @@ class TestSanitizeConfig:
         assert original == {"tick_counts": 2}
 
 
-class TestBobOffset:
+class TestBreathPose:
     def test_rest_at_cycle_start(self):
-        assert PetAnimator._bob_offset(0, 2, 30) == 0
+        assert PetAnimator._breath_pose(0, 2, 1.01, 0.99, 30) == (0, 1.0, 1.0)
 
     def test_peak_at_halfway(self):
-        assert PetAnimator._bob_offset(15, 2, 30) == -2
+        dy, sx, sy = PetAnimator._breath_pose(15, 2, 1.01, 0.99, 30)
+        assert dy == -2
+        assert sx == pytest.approx(1.01)
+        assert sy == pytest.approx(0.99)
 
     def test_returns_to_rest_at_cycle_end(self):
-        assert PetAnimator._bob_offset(30, 2, 30) == 0
+        assert PetAnimator._breath_pose(30, 2, 1.01, 0.99, 30) == (0, 1.0, 1.0)
 
-    def test_never_sinks_below_rest(self):
+    def test_offset_never_sinks_below_rest(self):
         # 只向上抬，否则脚底会被窗口裁掉
-        offsets = [PetAnimator._bob_offset(t, 2, 30) for t in range(90)]
+        offsets = [PetAnimator._breath_pose(t, 2, 1.01, 0.99, 30)[0] for t in range(90)]
         assert all(-2 <= o <= 0 for o in offsets)
 
+    def test_scale_never_shrinks_below_one(self):
+        # 缩放在吸气时张开、呼气时回到 1，不会缩到比原图更小
+        scales = [PetAnimator._breath_pose(t, 2, 1.01, 0.99, 30)[1] for t in range(90)]
+        assert min(scales) == pytest.approx(1.0)
+        assert max(scales) == pytest.approx(1.01)
+
+    def test_volume_roughly_kept(self):
+        # 1.01 × 0.99 ≈ 1：像呼吸，而不是整体放大
+        _, sx, sy = PetAnimator._breath_pose(15, 2, 1.01, 0.99, 30)
+        assert sx * sy == pytest.approx(1.0, abs=0.001)
+
+    def test_scale_only_config_keeps_offset_zero(self):
+        dy, sx, sy = PetAnimator._breath_pose(15, 0, 1.02, 0.98, 30)
+        assert dy == 0
+        assert sx == pytest.approx(1.02)
+        assert sy == pytest.approx(0.98)
+
     def test_single_pixel_amplitude_still_moves(self):
-        assert {PetAnimator._bob_offset(t, 1, 30) for t in range(30)} == {0, -1}
+        offsets = {PetAnimator._breath_pose(t, 1, 1.0, 1.0, 30)[0] for t in range(30)}
+        assert offsets == {0, -1}
 
     def test_disabled_returns_rest(self):
-        assert PetAnimator._bob_offset(15, 0, 30) == 0
-        assert PetAnimator._bob_offset(15, 2, 0) == 0
+        assert PetAnimator._breath_pose(15, 2, 1.01, 0.99, 0) == (0, 1.0, 1.0)
 
 
-class TestParseBob:
-    def test_missing_bob_is_off(self):
-        assert PetAnimator._parse_bob({}, "demo") == (0, 0)
+class TestParseBreath:
+    REST = {"amplitude": 0, "scale_x": 1.0, "scale_y": 1.0, "period_ticks": 0}
 
-    def test_amplitude_clamped(self):
-        assert PetAnimator._parse_bob({"bob": {"amplitude": 9, "period_ticks": 30}}, "demo") == (4, 30)
+    def test_missing_breath_is_off(self):
+        assert PetAnimator._parse_breath({}, "demo") == self.REST
 
-    def test_garbage_bob_ignored(self):
-        assert PetAnimator._parse_bob({"bob": {"amplitude": "big"}}, "demo") == (0, 0)
+    def test_values_clamped(self):
+        cfg = {"breath": {"amplitude": 9, "scale_x": 3.0, "scale_y": 0.1, "period_ticks": 5000}}
+        assert PetAnimator._parse_breath(cfg, "demo") == {
+            "amplitude": 4, "scale_x": 2.0, "scale_y": 0.5, "period_ticks": 900}
+
+    def test_garbage_breath_ignored(self):
+        assert PetAnimator._parse_breath({"breath": {"amplitude": "big"}}, "demo") == self.REST
+
+    def test_scale_defaults_to_one(self):
+        parsed = PetAnimator._parse_breath({"breath": {"amplitude": 2, "period_ticks": 30}}, "demo")
+        assert (parsed["scale_x"], parsed["scale_y"]) == (1.0, 1.0)
 
 
 class TestAnimTimeout:
@@ -124,21 +152,24 @@ def animator():
     anim.stop()
 
 
-class TestBobWiring:
-    """走真实素材：确认 JSON 配置能传到动画器并按时发位移。"""
+class TestBreathWiring:
+    """走真实素材：确认 JSON 配置能传到动画器并按时发姿态。"""
 
-    def test_idle_declares_bob(self, animator):
-        data = animator._load_action("idle")
-        assert (data["bob_amplitude"], data["bob_period"]) == (2, 30)
+    def test_idle_declares_breath(self, animator):
+        breath = animator._load_action("idle")["breath"]
+        assert breath == {"amplitude": 2, "scale_x": 1.01, "scale_y": 0.99, "period_ticks": 30}
 
-    def test_bob_resets_after_stop(self, animator):
-        seen: list[int] = []
-        animator.bob_changed.connect(seen.append)
+    def test_pose_emitted_and_reset(self, animator):
+        seen: list[tuple] = []
+        animator.pose_changed.connect(lambda dy, sx, sy: seen.append((dy, sx, sy)))
 
         assert animator.play("idle", duration=1)
-        for _ in range(16):
+        for _ in range(15):  # 周期 30 tick，半周期正好吸到最深
             animator._next_frame()
-        assert min(seen) == -2  # 半个周期后抬到最高
+        dy, sx, sy = seen[-1]
+        assert dy == -2
+        assert sx == pytest.approx(1.01)
+        assert sy == pytest.approx(0.99)
 
         animator.stop()
-        assert seen[-1] == 0
+        assert seen[-1] == (0, 1.0, 1.0)

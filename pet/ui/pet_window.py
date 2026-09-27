@@ -66,25 +66,36 @@ class StickyMenu(_FlatMenuBase):
 
 
 class _SpriteLabel(QLabel):
-    """宠物贴图：按偏移绘制做呼吸，不动窗口以免干扰重力判定。"""
+    """宠物贴图：按呼吸姿态绘制（上抬 + 缩放），不动窗口以免干扰重力判定。"""
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._offset_y = 0
+        self._pose: tuple[int, float, float] = (0, 1.0, 1.0)
 
-    def set_offset(self, dy: int):
-        if dy != self._offset_y:
-            self._offset_y = dy
+    def set_pose(self, dy: int, scale_x: float, scale_y: float):
+        pose = (dy, scale_x, scale_y)
+        if pose != self._pose:
+            self._pose = pose
             self.update()
 
     def paintEvent(self, event):
         pixmap = self.pixmap()
-        if self._offset_y == 0 or pixmap is None:
+        if self._pose == (0, 1.0, 1.0) or pixmap is None:
             super().paintEvent(event)
             return
+
+        dy, scale_x, scale_y = self._pose
         painter = QPainter(self)
-        x = (self.width() - pixmap.width()) // 2
-        painter.drawPixmap(x, self._offset_y, pixmap)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        left = (self.width() - pixmap.width()) // 2
+        top = dy
+        # 以脚底中点为锚点缩放：横向居中、纵向站在原处，不会沉下去
+        anchor_x = left + pixmap.width() / 2
+        anchor_y = top + pixmap.height()
+        painter.translate(anchor_x, anchor_y)
+        painter.scale(scale_x, scale_y)
+        painter.translate(-anchor_x, -anchor_y)
+        painter.drawPixmap(left, top, pixmap)
         painter.end()
 
 
@@ -178,7 +189,7 @@ class PetWindow(TransparentWindow):
 
         self.pet_anim = PetAnimator(parent=self)
         self.pet_anim.frame_changed.connect(self.pet_label.setPixmap)
-        self.pet_anim.bob_changed.connect(self.pet_label.set_offset)
+        self.pet_anim.pose_changed.connect(self.pet_label.set_pose)
         self.particles = ParticleWidget(self)
         self.pet_actions = PetActions(self, self.pet_anim, parent=self)
         self.action_queue = ActionQueue(self.pet_actions, parent=self)

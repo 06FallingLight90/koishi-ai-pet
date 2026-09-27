@@ -39,7 +39,7 @@ class PetAnimator(QObject):
     animation_finished = Signal(str)
     animation_interrupted = Signal(str)
     frame_changed = Signal(QPixmap)
-    bob_changed = Signal(int)  # 呼吸位移（0 或负值，负值=上移）
+    pose_changed = Signal(int, float, float)  # 呼吸姿态（纵向偏移px, 横向缩放, 纵向缩放）
 
     def __init__(self, pet_dir: str | None = None, parent=None):
         super().__init__(parent)
@@ -52,11 +52,13 @@ class PetAnimator(QObject):
         self._current_action: str = ""
         self._loop: bool = True
 
-        # 呼吸位移：按 tick 计算，只向上抬，避免脚底被窗口裁掉
+        # 呼吸姿态：按 tick 计算。位移只向上抬、缩放以脚底为锚点，避免沉出窗口
         self._tick_count: int = 0
-        self._bob_amplitude: int = 0
-        self._bob_period: int = 0
-        self._bob_now: int = 0
+        self._breath_amplitude: int = 0
+        self._breath_scale_x: float = 1.0
+        self._breath_scale_y: float = 1.0
+        self._breath_period: int = 0
+        self._pose_now: tuple[int, float, float] = (0, 1.0, 1.0)
 
         self._frame_timer = QTimer(self)
         self._frame_timer.timeout.connect(self._next_frame)
@@ -85,18 +87,21 @@ class PetAnimator(QObject):
             # 缺帧或配置损坏：停掉旧动画，让调用方（动作队列）能看出没播起来
             self._frame_timer.stop()
             self._duration_timer.stop()
-            self._reset_bob()
+            self._reset_breath()
             return False
 
         self._frame_timer.stop()
         self._duration_timer.stop()
-        self._reset_bob()
+        self._reset_breath()
 
+        breath = data["breath"]
         self._frames = data["frames"]
         self._tick_plan = data["tick_plan"]
         self._loop = data["loop"]
-        self._bob_amplitude = data["bob_amplitude"]
-        self._bob_period = data["bob_period"]
+        self._breath_amplitude = breath["amplitude"]
+        self._breath_scale_x = breath["scale_x"]
+        self._breath_scale_y = breath["scale_y"]
+        self._breath_period = breath["period_ticks"]
         self._current_action = action
         self._current_frame = 0
         self._tick_in_frame = 0
@@ -115,7 +120,7 @@ class PetAnimator(QObject):
     def stop(self):
         self._frame_timer.stop()
         self._duration_timer.stop()
-        self._reset_bob()
+        self._reset_breath()
 
     def has_frames(self, action: str) -> bool:
         return self._load_action(action) is not None
@@ -176,13 +181,11 @@ class PetAnimator(QObject):
 
         cfg = self._sanitize_config(cfg, len(frames), action)
         tick_plan = self._build_tick_plan(cfg, len(frames))
-        bob_amplitude, bob_period = self._parse_bob(cfg, action)
         data = {
             "frames": frames,
             "tick_plan": tick_plan,
             "loop": cfg.get("loop", True),
-            "bob_amplitude": bob_amplitude,
-            "bob_period": bob_period,
+            "breath": self._parse_breath(cfg, action),
         }
         self._cache[action] = data
         return data
@@ -251,19 +254,23 @@ class PetAnimator(QObject):
         return cfg
 
     @staticmethod
-    def _parse_bob(cfg: dict, action: str) -> tuple[int, int]:
-        """读取呼吸配置 (幅值 px, 周期 tick)。
+    def _parse_breath(cfg: dict, action: str) -> dict:
+        """读取 breath 配置：位移 px、横纵缩放、周期 tick。
 
-        幅值上限 4px：贴图 1:1 撑满窗口，抬过头会顶出画面。
+        位移上限 4px、缩放限制 0.5~2.0：贴图 1:1 撑满窗口，动作幅度过大就出去了。
         """
-        bob = cfg.get("bob") or {}
+        rest = {"amplitude": 0, "scale_x": 1.0, "scale_y": 1.0, "period_ticks": 0}
+        breath = cfg.get("breath") or {}
         try:
-            amplitude = max(0, min(4, int(bob.get("amplitude", 0) or 0)))
-            period = max(0, min(900, int(bob.get("period_ticks", 0) or 0)))
+            return {
+                "amplitude": max(0, min(4, int(breath.get("amplitude", 0) or 0))),
+                "scale_x": max(0.5, min(2.0, float(breath.get("scale_x", 1.0) or 1.0))),
+                "scale_y": max(0.5, min(2.0, float(breath.get("scale_y", 1.0) or 1.0))),
+                "period_ticks": max(0, min(900, int(breath.get("period_ticks", 0) or 0))),
+            }
         except (TypeError, ValueError):
-            logger.warning(f"'{action}': bob 配置无效，已忽略")
-            return 0, 0
-        return amplitude, period
+            logger.warning(f"'{action}': breath 配置无效，已忽略")
+            return rest
 
     def _config_exists(self, action: str) -> bool:
         return os.path.isfile(os.path.join(self._pet_dir, action, f"{action}.json"))
@@ -281,12 +288,12 @@ class PetAnimator(QObject):
 
     def _on_duration_end(self):
         self._frame_timer.stop()
-        self._reset_bob()
+        self._reset_breath()
         self.animation_finished.emit(self._current_action)
 
     def _next_frame(self):
         self._tick_count += 1
-        self._apply_bob()
+        self._apply_breath()
         self._tick_in_frame += 1
         if self._tick_in_frame >= self._tick_plan[self._current_frame]:
             self._tick_in_frame = 0
@@ -296,31 +303,42 @@ class PetAnimator(QObject):
                     self._current_frame = 0
                 else:
                     self._frame_timer.stop()
-                    self._reset_bob()
+                    self._reset_breath()
                     self.animation_finished.emit(self._current_action)
                     return
             self.frame_changed.emit(self._frames[self._current_frame])
 
-    def _reset_bob(self):
-        """停播或切动作时把呼吸位移归零。"""
-        self._bob_amplitude = 0
-        self._bob_period = 0
-        if self._bob_now != 0:
-            self._bob_now = 0
-            self.bob_changed.emit(0)
+    def _reset_breath(self):
+        """停播或切动作时把呼吸姿态归位。"""
+        self._breath_amplitude = 0
+        self._breath_scale_x = 1.0
+        self._breath_scale_y = 1.0
+        self._breath_period = 0
+        if self._pose_now != (0, 1.0, 1.0):
+            self._pose_now = (0, 1.0, 1.0)
+            self.pose_changed.emit(0, 1.0, 1.0)
 
     @staticmethod
-    def _bob_offset(tick: int, amplitude: int, period: int) -> int:
-        """呼吸位移：sin² 曲线，整周期内只向上抬（负值），不向下沉。"""
-        if amplitude <= 0 or period <= 0:
-            return 0
-        phase = math.sin(math.pi * (tick % period) / period)
-        return -int(amplitude * phase * phase + 0.5)
+    def _breath_pose(tick: int, amplitude: int, scale_x: float, scale_y: float,
+                     period: int) -> tuple[int, float, float]:
+        """呼吸姿态：sin² 曲线，位移只向上抬（负值）、缩放随吸气张开。
 
-    def _apply_bob(self):
-        if not self._bob_amplitude:
+        缩放锚点在脚底（绘制方保证），Y < 1 只让头顶下降，不会沉出画面；
+        scale_x * scale_y ≈ 1 时体积不变，看起来是呼吸而不是整体放大。
+        """
+        if period <= 0:
+            return 0, 1.0, 1.0
+        phase = math.sin(math.pi * (tick % period) / period) ** 2
+        return (-int(amplitude * phase + 0.5),
+                1.0 + (scale_x - 1.0) * phase,
+                1.0 + (scale_y - 1.0) * phase)
+
+    def _apply_breath(self):
+        if not self._breath_period:
             return
-        dy = self._bob_offset(self._tick_count, self._bob_amplitude, self._bob_period)
-        if dy != self._bob_now:
-            self._bob_now = dy
-            self.bob_changed.emit(dy)
+        pose = self._breath_pose(self._tick_count, self._breath_amplitude,
+                                 self._breath_scale_x, self._breath_scale_y,
+                                 self._breath_period)
+        if pose != self._pose_now:
+            self._pose_now = pose
+            self.pose_changed.emit(*pose)

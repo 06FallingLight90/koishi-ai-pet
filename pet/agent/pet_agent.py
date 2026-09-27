@@ -82,6 +82,7 @@ class PetAgent(QObject):
 
         self._thread: QThread | None = None
         self._worker: BrainWorker | None = None
+        self._retired: list[tuple[QThread, BrainWorker]] = []  # 被抢占且仍在运行的旧脑线程
         self._cancel_flag = False
         self._active_stream_id = 0
         self._last_interact_ms: dict[str, int] = {}
@@ -152,8 +153,16 @@ class PetAgent(QObject):
             pass
         try:
             if self._thread and self._thread.isRunning():
+                self._cancel_flag = True
+                self._active_stream_id += 1  # 世代失效，令管线在下一个轮询点退出
                 self._thread.quit()
                 self._thread.wait(3000)
+                if self._thread.isRunning():
+                    # 不强等（阻塞期由各超时上界决定），退役持有引用，退出守卫兜底
+                    logger.warning("[PetAgent] brain thread still running after cancel, retiring it")
+                    self._retire(self._thread, self._worker)
+                    self._thread = None
+                    self._worker = None
         except RuntimeError:
             pass
         if hasattr(self, 'memory_store'):
@@ -202,6 +211,10 @@ class PetAgent(QObject):
         self._active_stream_id += 1
         my_stream_id = self._active_stream_id
 
+        def _is_stale() -> bool:
+            # 新一轮管线启动即令旧管线过期：共享取消标志会被新管线复位，不能只依赖它
+            return self._cancel_flag or my_stream_id != self._active_stream_id
+
         def on_chunk(delta: str):
             nonlocal stream_started
             if self._cancel_flag or my_stream_id != self._active_stream_id:
@@ -219,7 +232,7 @@ class PetAgent(QObject):
                 self.speak_stream_end.emit(5000)
                 stream_started = False
 
-        result = self.behavior.autonomous_decide_stream(context, screenshot=True, on_chunk=on_chunk, on_stream_end=on_stream_end, cancel_check=self._is_cancelled)
+        result = self.behavior.autonomous_decide_stream(context, screenshot=True, on_chunk=on_chunk, on_stream_end=on_stream_end, cancel_check=_is_stale)
 
         if stream_started:
             self.speak_stream_end.emit(5000)
@@ -278,6 +291,9 @@ class PetAgent(QObject):
         self._active_stream_id += 1
         my_stream_id = self._active_stream_id
 
+        def _is_stale() -> bool:
+            return self._cancel_flag or my_stream_id != self._active_stream_id
+
         def on_chunk(delta: str):
             nonlocal stream_started
             if self._cancel_flag or my_stream_id != self._active_stream_id:
@@ -298,7 +314,7 @@ class PetAgent(QObject):
         result = self.behavior.interact_decide_stream(
             hint, on_chunk=on_chunk, on_stream_end=on_stream_end,
             thinking=thinking, enable_tools=enable_tools,
-            cancel_check=self._is_cancelled,
+            cancel_check=_is_stale,
         )
 
         if stream_started:
@@ -345,6 +361,9 @@ class PetAgent(QObject):
         self._active_stream_id += 1
         my_stream_id = self._active_stream_id
 
+        def _is_stale() -> bool:
+            return self._cancel_flag or my_stream_id != self._active_stream_id
+
         def on_chunk(delta: str):
             nonlocal stream_started
             if self._cancel_flag or my_stream_id != self._active_stream_id:
@@ -366,16 +385,12 @@ class PetAgent(QObject):
             message, context, screenshot=True,
             on_chunk=on_chunk, on_stream_end=on_stream_end,
             thinking=thinking, enable_tools=enable_tools,
-            cancel_check=self._is_cancelled,
+            cancel_check=_is_stale,
         )
 
         if stream_started:
             self.speak_stream_end.emit(4000)
         return result
-
-    def _is_cancelled(self) -> bool:
-        """协作式取消检查：供 Behavior 流式循环轮询。"""
-        return self._cancel_flag
 
     def _on_state_changed(self, state: str):
         """记录进入脑线程占用状态（autonomous/interacting）的时刻，供看门狗检测挂死。"""
@@ -445,23 +460,11 @@ class PetAgent(QObject):
         old_thread = self._thread
         old_worker = self._worker
         self._cancel_running_thread(ts)
-        if old_thread is not None:
-            try:
-                old_thread.finished.disconnect()
-            except (RuntimeError, TypeError):
-                pass
-            old_thread.deleteLater()
-        if old_worker is not None:
-            try:
-                old_worker.finished.disconnect()
-                old_worker.error.disconnect()
-            except (RuntimeError, TypeError):
-                pass
-            old_worker.deleteLater()
+        self._retire(old_thread, old_worker)
         self._cancel_flag = False
         self.llm_loading.emit(True)  # 开始 LLM 加载粒子
         self._worker = BrainWorker(fn, *args)
-        self._thread = QThread(self)
+        self._thread = QThread()
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
         self._worker.finished.connect(on_result or self._on_brain_result)
@@ -482,6 +485,54 @@ class PetAgent(QObject):
         if self._worker is not None:
             self._worker.deleteLater()
             self._worker = None
+
+    def _retire(self, thread, worker):
+        """回收旧脑线程：已结束则立即延迟删除；仍在运行则等自然结束后再回收。
+
+        绝不析构运行中的 QThread（~QThread 会触发 qFatal abort），
+        必须持有 Python 引用直至线程结束，避免 GC 触发同样的析构。
+        """
+        if thread is None:
+            return
+        try:
+            thread.finished.disconnect()
+        except (RuntimeError, TypeError):
+            pass
+        if worker is not None:
+            try:
+                worker.finished.disconnect()
+                worker.error.disconnect()
+            except (RuntimeError, TypeError):
+                pass
+
+        if not thread.isRunning():
+            thread.deleteLater()
+            if worker is not None:
+                worker.deleteLater()
+            return
+
+        logger.info("[PetAgent] old brain thread still running, defer deletion until finished")
+        self._retired.append((thread, worker))
+        if worker is not None:
+            # 保持退出链路：worker 结束后让线程事件循环退出
+            worker.finished.connect(thread.quit)
+            worker.error.connect(thread.quit)
+            # finished 在线程内直连触发 deleteLater，延迟删除随线程退出处理
+            thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(self._on_retired_finished)
+
+    def _on_retired_finished(self):
+        """退役线程自然结束后，释放持有的 Python 引用。"""
+        thread = self.sender()
+        self._retired = [pair for pair in self._retired if pair[0] is not thread]
+
+    def has_running_threads(self) -> bool:
+        """是否存在仍在运行的脑线程（含退役列表）。"""
+        if self._thread is not None and self._thread.isRunning():
+            return True
+        return any(thread is not None and thread.isRunning()
+                   for thread, _worker in self._retired)
 
     def _on_brain_result(self, result):
         self._stop_loading()

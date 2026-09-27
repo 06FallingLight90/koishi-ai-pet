@@ -457,6 +457,13 @@ class Behavior(BrainMixin):
         finally:
             stop_event.set()
             t.join(timeout=3)
+            # 关闭被放弃的流式响应，中断挂住的 HTTP 读，释放连接
+            close = getattr(stream, "close", None)
+            if close is not None:
+                try:
+                    close()
+                except Exception:
+                    pass
 
     def _stream_and_build_output(self, messages: list, on_chunk=None, on_stream_end=None,
                                  tag: str = "", max_tokens: int = 4000,

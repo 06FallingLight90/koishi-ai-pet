@@ -386,4 +386,14 @@ def main():
     # 初始化完成：更新启动标记，区分"启动中途崩溃"与"正常运行中崩溃"
     get_guard().mark_started()
     logger.info("Entering event loop")
-    sys.exit(app.exec())
+    code = app.exec()
+    # 仍有 QThread 运行时跳过解释器清理：~QThread 析构运行中的线程会触发 qFatal abort
+    try:
+        threads_running = agent.has_running_threads()
+    except Exception:
+        threads_running = False
+    if threads_running:
+        logger.warning("brain threads still running at exit, skipping interpreter teardown")
+        logging.shutdown()
+        os._exit(code)
+    sys.exit(code)

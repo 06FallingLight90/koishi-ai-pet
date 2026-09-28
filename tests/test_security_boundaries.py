@@ -1,5 +1,8 @@
 """安全边界测试：文件路径白名单、URL 协议校验。"""
 
+import subprocess
+import sys
+
 import pytest
 
 from pet.tools.browser.core import BrowserTool
@@ -43,6 +46,62 @@ class TestCheckPath:
         sibling = sandbox.parent / (sandbox.name + "_evil") / "file.txt"
         with pytest.raises(PermissionError):
             FileOpsTool()._check_path(str(sibling))
+
+
+def _make_symlink(link, target):
+    """创建符号链接；平台或权限不支持时跳过该用例。"""
+    try:
+        link.symlink_to(target)
+    except (OSError, NotImplementedError) as e:
+        pytest.skip(f"当前环境不支持创建符号链接: {e}")
+
+
+def _make_junction(link, target) -> bool:
+    """用 mklink /J 创建目录联接；非 Windows 或失败时返回 False。"""
+    if not sys.platform.startswith("win"):
+        return False
+    proc = subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(target)],
+                          capture_output=True, text=True)
+    return proc.returncode == 0
+
+
+class TestLinkEscape:
+    """允许目录内的链接（symlink / junction）不得成为逃逸通道。"""
+
+    def test_rejects_file_symlink_to_outside(self, sandbox, tmp_path):
+        outside = tmp_path / "outside.txt"
+        outside.write_text("secret", encoding="utf-8")
+        link = sandbox / "escape.txt"
+        _make_symlink(link, outside)
+        with pytest.raises(PermissionError):
+            FileOpsTool()._check_path(str(link))
+
+    def test_rejects_dir_symlink_to_outside(self, sandbox, tmp_path):
+        outside_dir = tmp_path / "outside_dir"
+        outside_dir.mkdir()
+        (outside_dir / "secret.txt").write_text("secret", encoding="utf-8")
+        link_dir = sandbox / "escape_dir"
+        _make_symlink(link_dir, outside_dir)
+        with pytest.raises(PermissionError):
+            FileOpsTool()._check_path(str(link_dir / "secret.txt"))
+
+    def test_allows_symlink_inside_root(self, sandbox):
+        # 指向允许目录内部的链接不应被误拒
+        real = sandbox / "real.txt"
+        real.write_text("ok", encoding="utf-8")
+        link = sandbox / "inside_link.txt"
+        _make_symlink(link, real)
+        assert FileOpsTool()._check_path(str(link))
+
+    def test_rejects_junction_to_outside(self, sandbox, tmp_path):
+        outside_dir = tmp_path / "j_outside"
+        outside_dir.mkdir()
+        (outside_dir / "secret.txt").write_text("secret", encoding="utf-8")
+        link_dir = sandbox / "j_escape"
+        if not _make_junction(link_dir, outside_dir):
+            pytest.skip("无法创建 junction（非 Windows 或权限不足）")
+        with pytest.raises(PermissionError):
+            FileOpsTool()._check_path(str(link_dir / "secret.txt"))
 
 
 class TestReadFile:

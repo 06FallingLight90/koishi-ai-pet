@@ -26,10 +26,12 @@ _ALLOWED_ROOTS = [
 
 class FileOpsTool:
     def _check_path(self, path: str) -> str:
-        abs_path = os.path.abspath(os.path.expanduser(path))
+        # realpath 解析 symlink / junction：否则允许目录内的链接可指向外部造成逃逸
+        abs_path = os.path.realpath(os.path.expanduser(path))
         for root in _ALLOWED_ROOTS:
+            real_root = os.path.realpath(root)
             try:
-                if os.path.commonpath([abs_path, root]) == root:
+                if os.path.commonpath([abs_path, real_root]) == real_root:
                     return abs_path
             except ValueError:
                 continue

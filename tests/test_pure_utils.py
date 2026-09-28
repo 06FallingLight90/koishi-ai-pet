@@ -1,11 +1,16 @@
 """纯逻辑函数测试：无 IO、无 Qt 依赖。"""
 
+import subprocess
+import sys
+
+import pytest
+
 from pet.config import _convert
 from pet.game.tic_tac_toe import _board_text, _check_winner, _is_full
 from pet.tools.executor import ToolExecutor, _log_preview
 from pet.tools.knowledge.chunker import chunk_text
 from pet.tools.timer.core import TimerTool
-from pet.version_check import _strip_v, _ver_newer
+from pet.version_utils import strip_v, ver_newer
 
 
 class TestChunkText:
@@ -40,21 +45,41 @@ class TestChunkText:
 
 class TestVersionCompare:
     def test_strip_single_v_prefix(self):
-        assert _strip_v("v1.5.4") == "1.5.4"
-        assert _strip_v("V1.5.4") == "1.5.4"
-        assert _strip_v("1.5.4") == "1.5.4"
-        assert _strip_v("vv1") == "v1"
+        assert strip_v("v1.5.4") == "1.5.4"
+        assert strip_v("V1.5.4") == "1.5.4"
+        assert strip_v("1.5.4") == "1.5.4"
+        assert strip_v("vv1") == "v1"
 
     def test_numeric_order_not_lexical(self):
-        assert _ver_newer("1.5.10", "1.5.9")
-        assert not _ver_newer("1.5.9", "1.5.10")
+        assert ver_newer("1.5.10", "1.5.9")
+        assert not ver_newer("1.5.9", "1.5.10")
 
     def test_equal_version_is_not_newer(self):
-        assert not _ver_newer("1.5.4", "1.5.4")
+        assert not ver_newer("1.5.4", "1.5.4")
 
     def test_invalid_version_returns_false(self):
-        assert not _ver_newer("not-a-version", "1.5.4")
-        assert not _ver_newer("1.5.4", "not-a-version")
+        assert not ver_newer("not-a-version", "1.5.4")
+        assert not ver_newer("1.5.4", "not-a-version")
+
+
+class TestLightweightImports:
+    """轻量环境（无 PySide6）也必须能导入这些纯逻辑模块。"""
+
+    @pytest.mark.parametrize("module", [
+        "pet.version_utils",
+        "pet.action.registry",
+        "pet.tools.knowledge.chunker",
+    ])
+    def test_no_qt_dependency(self, module):
+        code = (
+            "import sys, importlib\n"
+            f"importlib.import_module({module!r})\n"
+            "assert 'PySide6' not in sys.modules, sorted(\n"
+            "    m for m in sys.modules if m.startswith('PySide6'))\n"
+        )
+        proc = subprocess.run([sys.executable, "-c", code],
+                              capture_output=True, text=True)
+        assert proc.returncode == 0, proc.stderr
 
 
 class TestTicTacToe:

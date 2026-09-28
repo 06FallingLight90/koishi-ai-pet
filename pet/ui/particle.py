@@ -3,6 +3,7 @@
 import math
 import random
 import logging
+from collections.abc import Callable
 
 from PySide6.QtCore import Qt, QTimer, QObject, Signal, QPointF
 from PySide6.QtGui import QPainter, QColor, QPen, QFont, QPolygonF, QPainterPath
@@ -16,7 +17,7 @@ logger = logging.getLogger(__name__)
 class Particle:
     __slots__ = (
         "x", "y", "vx", "vy", "gravity",
-        "lifetime", "age", "size", "color", "shape", "text",
+        "lifetime", "age", "size", "color", "shape", "text", "center_x",
     )
 
     def __init__(
@@ -29,6 +30,7 @@ class Particle:
         color: QColor = QColor(255, 200, 100),
         shape: str = "circle",
         text: str = "",
+        center_x: bool = False,
     ):
         self.x = x
         self.y = y
@@ -41,6 +43,7 @@ class Particle:
         self.color = color
         self.shape = shape  # 圆形 / 星形 / 文字
         self.text = text    # shape=="text" 时使用
+        self.center_x = center_x  # 文字是否以 x 为水平中心绘制（默认 x 为左边缘）
 
     @property
     def alive(self) -> bool:
@@ -246,7 +249,22 @@ def _spawn_fish(cx: float, cy: float) -> list[Particle]:
         color=QColor(255, 255, 255),
         shape="text",
         text="🐟",
+        center_x=True,  # 从头部中心上浮，而非以左边缘对齐
     )]
+
+
+# 特效名 → 生成器：新增特效只需在此登记，调试面板会自动列出
+_SPAWNERS: dict[str, Callable[[float, float], list[Particle]]] = {
+    "dust": _spawn_dust,
+    "stars": _spawn_stars,
+    "zzz": _spawn_zzz,
+    "notes": _spawn_notes,
+    "hearts": _spawn_hearts,
+    "dark_hearts": _spawn_dark_hearts,
+    "bubbles": _spawn_bubbles,
+    "question_marks": _spawn_question_marks,
+    "fish": _spawn_fish,
+}
 
 
 def _draw_star(painter: QPainter, x: float, y: float, size: float, color: QColor, alpha: float):
@@ -304,7 +322,11 @@ def _draw_particle(painter: QPainter, p: Particle):
         font = QFont("Microsoft YaHei", int(p.size))
         painter.setFont(font)
         painter.setPen(QPen(c))
-        painter.drawText(int(p.x), int(p.y), p.text)
+        # drawText 默认以 (x, y) 为「左边缘 + 基线」，center_x 时把 x 当作水平中心
+        tx = p.x
+        if p.center_x:
+            tx -= painter.fontMetrics().horizontalAdvance(p.text) / 2
+        painter.drawText(int(tx), int(p.y), p.text)
 
 
 
@@ -365,21 +387,16 @@ class ParticleWidget(QWidget):
         "zzz":             1 / 2,  # 窗口中部
     }
 
+    @staticmethod
+    def effect_names() -> tuple[str, ...]:
+        """全部已注册的粒子特效名（供调试面板扫描列出）。"""
+        return tuple(_SPAWNERS)
+
     def spawn(self, effect: str, cx: float | None = None, cy: float | None = None):
         """触发粒子特效"""
-        spawner = {
-            "dust": _spawn_dust,
-            "stars": _spawn_stars,
-            "zzz": _spawn_zzz,
-            "notes": _spawn_notes,
-            "hearts": _spawn_hearts,
-            "dark_hearts": _spawn_dark_hearts,
-            "bubbles": _spawn_bubbles,
-            "question_marks": _spawn_question_marks,
-            "fish": _spawn_fish,
-        }.get(effect)
+        spawner = _SPAWNERS.get(effect)
         if spawner is None:
-            logger.warning(f"Unknown particle effect: {effect!r}, expected one of dust/stars/zzz/notes/hearts/dark_hearts/bubbles/question_marks/fish")
+            logger.warning(f"Unknown particle effect: {effect!r}, expected one of {'/'.join(_SPAWNERS)}")
             return
 
         if cx is not None:

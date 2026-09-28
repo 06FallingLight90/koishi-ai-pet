@@ -362,12 +362,15 @@ class DebugWindow(QWidget):
         particle_group = QGroupBox("粒子特效测试")
         particle_layout = QVBoxLayout(particle_group)
 
-        pbtn_row = QHBoxLayout()
-        for fx in ("dust", "stars", "zzz", "hearts"):
+        # 扫描 ParticleWidget 注册的全部特效，新增特效无需改这里
+        PARTICLE_COLS = 4
+        pbtn_grid = QGridLayout()
+        for i, fx in enumerate(ParticleWidget.effect_names()):
             btn = QPushButton(fx)
+            btn.setMinimumWidth(54)
             btn.clicked.connect(lambda checked, e=fx: self._test_particle(e))
-            pbtn_row.addWidget(btn)
-        particle_layout.addLayout(pbtn_row)
+            pbtn_grid.addWidget(btn, i // PARTICLE_COLS, i % PARTICLE_COLS)
+        particle_layout.addLayout(pbtn_grid)
 
         right.addWidget(particle_group)
 

@@ -13,7 +13,7 @@
 - **主动对话**：可以键盘输入、语音输入（需要配置讯飞API），与桌宠对话
 - **持久记忆**：使用SQLite实现持久记忆，带可视化记忆管理窗口（浏览/搜索/筛选/编辑）；部分近期事件会注入上下文
 - **宠物状态**：有生理（饱食、精力）和心理（好感、愉悦、理智）参数，会影响桌宠行为
-- **互动游戏**：内置猜数字、猜拳、井字棋，可以和桌宠游玩
+- **互动游戏**：内置猜数字、猜拳、井字棋、二十问，可以和桌宠游玩
 - **自主觅食**：饿了会自己寻找食物、跳起来吃掉
 - **音乐控制**：悬停桌宠可控制系统媒体播放/暂停、切歌、音量与静音
 - **工具系统**：内置浏览器、天气、待办、文件操作、系统监控、知识库等工具，参照指南可以自行拓展
@@ -23,6 +23,7 @@
 ```
 KoishiAI/
 ├── pyproject.toml              # 项目配置 & 依赖
+├── tests/                      # 单元测试（pytest，dev 可选依赖）
 ├── assets/actions/             # 帧动画素材（idle、walk、sit、sleep…）
 └── pet/
     ├── app.py                  # 主入口
@@ -32,7 +33,7 @@ KoishiAI/
     ├── brain/                  # LLM 集成：Behavior、prompts、memory、window_detector
     ├── pulse/                  # 心理数值引擎：Mood（好感/愉悦/理智）、Vitals（饱食/精力）
     ├── food/                   # 觅食系统：食物生成、过期、自主进食
-    ├── game/                   # 回合制游戏：GameBase 容器 + 猜数字/猜拳/井字棋
+    ├── game/                   # 回合制游戏：GameBase 容器 + 猜数字/猜拳/井字棋/二十问
     ├── tools/                  # 工具系统：Registry、Executor、内置工具
     ├── ui/                     # Qt 界面：宠物窗口、气泡、聊天框、托盘、设置
     └── voice/                  # 语音输入：麦克风采集、讯飞 STT
@@ -85,12 +86,12 @@ python -m pet
 ### 配置步骤
 
 1. 启动桌宠，打开托盘菜单 → **设置**
-2. **「连接」页签**：填入**首选 API 地址**（Base URL）和**首选 API Key**（密钥），首选模型名称设为供应商对应的模型名，如 `mimo-v2.5`
+2. **「连接」页签**：填入**首选 API 地址**（Base URL）和**首选 API Key**（密钥），首选模型名称设为供应商对应的模型名，如 `mimo-v2.6-flash`
 3. 点「测试连接」验证，成功后右下角保存
 
 > 推荐方案：**deepseek-flash** — 支持视觉的多模态模型，推荐首选（查看 [DeepSeek 开放平台](https://platform.deepseek.com/) 获取 API 信息）
 >
-> 推荐方案：**mimo-v2.5** — 原生多模态、价格便宜（查看 [Mimo 官网](https://mimo.mi.com/docs/zh-CN/quick-start/summary/first-api-call/) 获取 API 信息）
+> 推荐方案：**mimo-v2.6-flash** — 原生多模态、价格便宜（查看 [Mimo 官网](https://mimo.mi.com/docs/zh-CN/quick-start/summary/first-api-call/) 获取 API 信息）
 >
 > 记忆系统推荐 **智谱 embedding-3** — 便宜且快速；不配置也能用基础的关键词匹配记忆
 
@@ -170,8 +171,9 @@ chmod +x update.sh && ./update.sh
 | `guess_number` | 猜数字：随机生成 1-100 的数，桌宠每回合猜一个，给桌宠反馈"大了/小了"，7 次内猜中算赢 |
 | `rps` | 猜拳：石头剪刀布，桌宠先出拳、你后出，三局两胜，15 秒未出拳判你输 |
 | `tic_tac_toe` | 井字棋：3×3 棋盘，随机先后手，先连成三子获胜，15 秒未落子判你输 |
+| `twenty_questions` | 二十问：你心想一个东西，桌宠问最多 20 个"是/否"问题猜出它，在面板点"是/否/不确定"作答；桌宠可随时给出最终猜测由你确认对错，20 问用完未猜中算它输 |
 
-游戏流程：`game__list` 了解可选游戏 → `game__init` 开局 → `game__play` 每回合推进 → 返回 `ended=True` 即结束。猜拳和井字棋有可视化交互面板，点击按钮/格子即可操作。
+游戏流程：`game__list` 了解可选游戏 → `game__init` 开局 → `game__play` 每回合推进 → 返回 `ended=True` 即结束。猜拳、井字棋和二十问有可视化交互面板，点击按钮/格子即可操作。
 
 ### recall
 

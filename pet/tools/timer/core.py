@@ -41,13 +41,6 @@ class TimerTool:
         with self._lock:
             for row in rows:
                 fire_at = row["fire_at"]
-                # 已经过期 — 直接丢弃
-                if fire_at <= now_s:
-                    logger.info(f"[Timer] expired while offline: {row['id']} '{row['label']}'")
-                    self._storage.remove(row["id"])
-                    continue
-
-                remain = int(fire_at - now_s)
                 timer_id = row["id"]
 
                 def _on_fire(tid=timer_id):
@@ -68,9 +61,16 @@ class TimerTool:
                     "duration_s": row["duration_s"], "fire_at": fire_at,
                 }
 
-                if offline_seconds > 0 and remain > 1:
-                    # 离线期间已到点：锁内登记，锁外补发，避免 _on_fire 重入 _lock 死锁
-                    offline_fires.append(_on_fire)
+                if fire_at <= now_s:
+                    if offline_seconds > 0:
+                        # 到点时间落在离线区间内：锁内登记、锁外补发，
+                        # 避免 _on_fire 重入 _lock 死锁
+                        offline_fires.append(_on_fire)
+                    else:
+                        # 没有关机记录却已过期（数据陈旧）：丢弃，不打扰用户
+                        logger.info(f"[Timer] expired while offline: {timer_id} '{row['label']}'")
+                        self._timers.pop(timer_id, None)
+                        self._storage.remove(timer_id)
                     continue
 
                 try:

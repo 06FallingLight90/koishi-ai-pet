@@ -232,8 +232,10 @@ def _spawn_bubbles(cx: float, cy: float) -> list[Particle]:
 
 # 鱼 emoji：字号与食物 emoji 保持一致（见 pet/ui/food_window.py 的 36pt）
 _FISH_TEXT_SIZE = 36
-_FISH_RISE_SPEED = 2.4    # px/tick，匀速上浮
-_FISH_LIFETIME = 1500     # ms，约上升 120px 后淡出消失
+_FISH_RISE_SPEED = 1.4    # px/tick，匀速上浮
+_FISH_LIFETIME = 1500     # ms，约上升 70px 后淡出消失
+# 上浮高度须留在粒子窗口内：窗口上边距仅 _MARGIN=100px，且 emoji 画在基线之上
+# （36pt 时约 48px 高），升太满会在顶部被裁掉。70px 可保证字形完整淡出。
 
 
 def _spawn_fish(cx: float, cy: float) -> list[Particle]:

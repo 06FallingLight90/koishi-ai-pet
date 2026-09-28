@@ -4,10 +4,23 @@
 # Windows 批处理文件必须保持 CRLF，否则 cmd.exe 无法运行
 *.bat text eol=crlf
 
-# 测试目录只随仓库分发，不进 git archive / GitHub 源码包
+# 下面这些只随仓库分发，不进 git archive / GitHub 源码包。
+
+# 测试与 CI
 /tests/ export-ignore
 /tests/** export-ignore
-
-# CI 配置只随仓库分发，不进 git archive / GitHub 源码包
 /.github/ export-ignore
 /.github/** export-ignore
+
+# 文档与生成脚本（gen_docs / gen_changelog 只在开发期用）
+/docs/ export-ignore
+/docs/** export-ignore
+/scripts/ export-ignore
+/scripts/** export-ignore
+CONTRIBUTING.md export-ignore
+
+# 仓库元数据
+/.gitignore export-ignore
+/.gitattributes export-ignore
+
+# CHANGELOG.md 保留：终端用户也看版本变更

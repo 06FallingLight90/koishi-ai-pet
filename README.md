@@ -13,7 +13,7 @@
 - **主动对话**：可以键盘输入、语音输入（需要配置讯飞API），与桌宠对话
 - **持久记忆**：使用SQLite实现持久记忆，带可视化记忆管理窗口（浏览/搜索/筛选/编辑）；部分近期事件会注入上下文
 - **宠物状态**：有生理（饱食、精力）和心理（好感、愉悦、理智）参数，会影响桌宠行为
-- **互动游戏**：内置猜数字、猜拳、井字棋，可以和桌宠游玩
+- **互动游戏**：内置猜数字、猜拳、井字棋、二十问，可以和桌宠游玩
 - **自主觅食**：饿了会自己寻找食物、跳起来吃掉
 - **音乐控制**：悬停桌宠可控制系统媒体播放/暂停、切歌、音量与静音
 - **工具系统**：内置浏览器、天气、待办、文件操作、系统监控、知识库等工具，参照指南可以自行拓展
@@ -37,6 +37,14 @@ KoishiAI/
     ├── ui/                     # Qt 界面：宠物窗口、气泡、聊天框、托盘、设置
     └── voice/                  # 语音输入：麦克风采集、讯飞 STT
 ```
+
+## 文档
+
+- 架构总览（分层、线程模型、数据流、红线与常见改动入口）：[docs/architecture.md](docs/architecture.md)
+- 术语表（vitals / mood / needs / outcome…）：[docs/glossary.md](docs/glossary.md)
+- 参考表（配置项、动作、工具、粒子特效、提示词块、模块清单）：[docs/README.md](docs/README.md)
+- 工具开发指南（目录约定、`register()` 模板、参数与返回值、`TOOL_CTX`）：[docs/tool-development.md](docs/tool-development.md)
+- 贡献指南（环境、测试、提交与 PR 规范）：[CONTRIBUTING.md](CONTRIBUTING.md)
 
 ## 快速开始
 
@@ -112,7 +120,7 @@ python -m pet
 ### 桌宠基本设置
 
 - **「提示词」页签**：设置角色人格（可参考项目目录下的 `预设人格提示词.md`），并填写「人格台词范例」——每行一句真实台词，注入后用于校准说话语感，只参考风格不照搬内容（抓起、释放、窗口消失等提示词有默认值，可选填）
-- **「语音」页签**：如需语音输入对话，配置讯飞 API
+- **语音输入**：如需语音对话，在「通用」页签填讯飞听写 API 并开启语音输入（热键默认 F8）
 
 > 模型兼容 OpenAI 格式接口，硅基流动、DeepSeek 等均可直接填入。Ollama 本地部署理论上也支持。
 
@@ -140,7 +148,7 @@ python -m pytest
 ## 更新
 
 项目提供一键更新脚本，会自动从 GitHub 下载最新 Release 源码并更新依赖，**保留你的虚拟环境、配置和数据**。
-> 请保证你可以正常访问 GitHub，推荐使用Watt Toolkit加速
+> 更新脚本要访问 GitHub 的 Release 接口与源码包，请保证网络可达。
 ### Windows
 
 双击 `update.bat` 即可。脚本会：
@@ -191,6 +199,7 @@ chmod +x update.sh && ./update.sh
 | `guess_number` | 猜数字：随机生成 1-100 的数，桌宠每回合猜一个，给桌宠反馈"大了/小了"，7 次内猜中算赢 |
 | `rps` | 猜拳：石头剪刀布，桌宠先出拳、你后出，三局两胜，15 秒未出拳判你输 |
 | `tic_tac_toe` | 井字棋：3×3 棋盘，随机先后手，先连成三子获胜，15 秒未落子判你输 |
+| `twenty_questions` | 二十问：你心里想一个东西，桌宠提问、你在面板上答「是/否/不确定」，20 问内猜中算它赢 |
 
 游戏流程：`game__list` 了解可选游戏 → `game__init` 开局 → `game__play` 每回合推进 → 返回 `ended=True` 即结束。猜拳和井字棋有可视化交互面板，点击按钮/格子即可操作。
 
@@ -345,148 +354,10 @@ RAG 知识库，支持语义检索。可配置向量嵌入以启用语义搜索�
 
 ## 工具开发指南
 
-### 工具骨架
+给桌宠加一项外部能力的完整流程（目录约定、`register()` 模板、参数与返回值约定、图片注入、
+`TOOL_CTX` 能力、`aside` 用法、启用方式与注意事项）见 **[docs/tool-development.md](docs/tool-development.md)**。
 
-在 `pet/tools/` 下创建新目录，包含 `__init__.py`（必须）和实现文件：
-
-```
-pet/tools/my_tool/
-├── __init__.py           # 注册入口（必须）
-├── core.py               # 业务实现（推荐）
-├── config.example.json   # 私有配置模板（可选，首次自动复制为 config.json）
-└── requirements.txt      # 私有依赖（可选，首次自动安装）
-```
-
-核心文件说明：
-- `__init__.py` -- 需定义 `TOOL_NAME`、`TOOL_DESCRIPTION`、`TOOL_GROUP`、`register()`
-- `core.py` -- 业务逻辑可放在任意文件中，加载器不关心文件名
-- `config.example.json` -- 工具私有配置模板，框架首次加载时自动复制为 `config.json`
-
-`__init__.py` 模板：
-
-```python
-from pet.tools.my_tool.core import do_something
-
-TOOL_NAME = "my_tool"
-TOOL_DESCRIPTION = "一句话描述工具用途"
-TOOL_GROUP = "productivity"  # 工具分组，LLM 通过 tool_search 按需发现
-
-def register(registry):
-    registry.register(TOOL_NAME, TOOL_DESCRIPTION)
-
-    registry.add_method(
-        TOOL_NAME, "do",
-        "执行某操作",
-        handler=do_something,
-        args={
-            "target": {"type": "str", "required": True, "desc": "目标名称"},
-            "mode": {"type": "str", "required": False, "default": "fast",
-                     "desc": "执行模式", "enum": ["fast", "slow"]},
-        },
-        timeout=15.0,  # 可选：超时秒数，默认 30s
-    )
-```
-
-### 工具分组
-
-`TOOL_GROUP` 决定工具所属分组，用于动态激活。当前分组：
-
-| 分组 | 包含工具 | 说明 |
-|------|----------|------|
-| `default` | `tool_search`, `food`, `game`, `recall` | 始终激活，无需搜索 |
-| `web` | `browser`, `web_search` | 浏览器与网络搜索 |
-| `file` | `file` | 本地文件操作 |
-| `info` | `weather`, `system_monitor` | 信息查询 |
-| `productivity` | `todo`, `timer` | 效率工具 |
-| `knowledge` | `knowledge` | 知识库 |
-
-当 LLM 需要某个功能时，先调用 `tool_search.list_groups` 或 `tool_search.search(keyword)` 探索工具，匹配到的分组自动激活，后续请求即可调用该组的全部工具。
-
-### 参数定义
-
-`args` 字典中每个参数支持以下字段：
-
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `type` | `str` | 是 | 参数类型：`str` / `int` / `float` / `bool` |
-| `required` | `bool` | 否 | 是否必填，默认 `False` |
-| `default` | 同 type | 否 | 默认值 |
-| `desc` | `str` | 否 | 参数描述（写入 LLM function schema） |
-| `enum` | `list` | 否 | 枚举可选值 |
-
-参数会自动转换为 OpenAI function calling 格式，LLM 通过 `tool_calls` 调用。
-
-### 返回值
-
-```python
-def do_something(target: str, mode: str = "fast") -> dict:
-    return {
-        "summary": "操作成功的简短描述",   # LLM 优先读取
-        "data": {"result": "..."},        # 结构化数据
-    }
-```
-
-| 返回类型 | LLM 看到的内容 |
-|----------|----------------|
-| `dict` 含 `summary` | summary 文本 + JSON |
-| `dict` 不含 `summary` | JSON 字符串 |
-| `str` | 原始字符串 |
-
-返回值会经由 `ToolExecutor._normalize` 统一为文本，插入下一轮 LLM 调用。
-
-### 图片注入（多模态）
-
-```python
-import base64
-
-def capture() -> dict:
-    return {
-        "summary": "截图完成",
-        "__image__": base64.b64encode(img_bytes).decode(),  # 约定键名
-    }
-```
-
-系统自动将 `__image__` 提取为多模态消息，需要模型支持视觉。
-
-### 主动调用宠物能力
-
-```python
-from pet.tools.context import TOOL_CTX
-
-def alert() -> dict:
-    TOOL_CTX.speech("注意！", duration=3000)
-    TOOL_CTX.action("bounce", kwargs={"dx": 0, "dy": -200})
-    return {"summary": "已提醒"}
-```
-
-`TOOL_CTX` 可用方法：`speech`、`action`、`add_context`、`notify`、`request_interact`、`register_tick`、`register_alarm`、`note_event`。
-
-`note_event(kind, text)` 上报一条事件，供桌宠的「最近发生了什么」章节使用（同类型只保留最近一次，超出保鲜窗口后不再注入）。适合定时器、待办、对局等已经发生的事：
-
-```python
-TOOL_CTX.note_event("timer", "你设的「吃药」定时器响了")
-```
-
-### aside 通用参数
-
-所有工具方法自动附带一个可选参数 `aside`（自言自语）。模型调用工具时可以带一句台词（如"搜搜看今天天气…"），系统会播给用户听，但不会作为正式回复、也不会传给 handler。它是模型"言行统一"的过程性辅助，最终输出 `Speech` 才是正式答复。
-
-### 启用工具
-
-在 `settings.json` 中配置：
-
-```json
-"TOOLS_ENABLED": ["my_tool", "weather"]
-```
-
-`["*"]` 启用全部，`[]` 全部禁用。未启用的工具不会出现在 LLM 可见的工具列表中。
-
-### 注意事项
-
-- **参数名严格匹配**：`add_method` 的 `args` 键名必须与 handler 参数名一致
-- **超时保护**：handler 在线程池中执行，超时后自动终止并返回错误
-- **异常隔离**：handler 异常会被捕获，译为错误信息传给 LLM，不影响主流程
-- **序列化友好**：返回的 dict 必须能被 `json.dumps(ensure_ascii=False)` 序列化
+现有工具的分组与方法清单见 [docs/reference/tools.md](docs/reference/tools.md)（生成物，随代码更新）。
 
 ## 许可
 

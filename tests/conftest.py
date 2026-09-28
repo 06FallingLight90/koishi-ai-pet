@@ -6,7 +6,9 @@
 3. pet/__init__ 会安装崩溃钩子并改写 logs/startup.state、全局 excepthook，此处用空模块顶替
 """
 
+import atexit
 import os
+import shutil
 import sys
 import tempfile
 import types
@@ -15,6 +17,7 @@ from pathlib import Path
 import pytest
 
 _TMP_ROOT = Path(tempfile.mkdtemp(prefix="koishi-ai-pet-tests-"))
+atexit.register(shutil.rmtree, _TMP_ROOT, ignore_errors=True)
 os.environ["APPDATA"] = str(_TMP_ROOT)
 os.environ["XDG_CONFIG_HOME"] = str(_TMP_ROOT)
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")

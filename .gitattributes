@@ -7,3 +7,7 @@
 # 测试目录只随仓库分发，不进 git archive / GitHub 源码包
 /tests/ export-ignore
 /tests/** export-ignore
+
+# CI 配置只随仓库分发，不进 git archive / GitHub 源码包
+/.github/ export-ignore
+/.github/** export-ignore

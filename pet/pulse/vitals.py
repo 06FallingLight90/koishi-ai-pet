@@ -28,20 +28,21 @@ class Thresholds:
 class Vitals(QObject):
     """生理数值系统，外部通过 modify 方法控制，_vitals_tick 按动作调整。"""
 
+    # (饱食度增量, 精力增量)：负值为消耗，正值为恢复
     ACTION_VITALS_DELTA: dict[str, tuple[float, float]] = {
         "sleep":        (-0.003, +0.05),
-        "sit":          (-0.003, 0),  # 不回精力：sit 是常用填充动作，回精力会让精力形同虚设
-        "thinking":     (-0.003, -0.01),
-        "look_around":  (-0.003, -0.01),
-        "walk":         (-0.008, -0.1),
-        "drive":        (-0.008, -0.1),
-        "bounce":       (-0.02,  -1),
-        "shake_arms":   (-0.003, -0.03),
-        "stretch":      (-0.003, -0.02),
-        "rotate":       (-0.005, -0.03),
-        "calling":      (-0.003, -0.03),
-        "finger_heart": (-0.003, -0.01),
-        "fishing":      (-0.008, -0.01)
+        "sit":          (-0.003, 0),
+        "thinking":     (-0.003, -0.005),
+        "look_around":  (-0.003, -0.005),
+        "walk":         (-0.008, -0.05),
+        "drive":        (-0.008, -0.05),
+        "bounce":       (-0.02,  -0.5),
+        "shake_arms":   (-0.003, -0.015),
+        "stretch":      (-0.003, -0.01),
+        "rotate":       (-0.005, -0.015),
+        "calling":      (-0.003, -0.015),
+        "finger_heart": (-0.003, -0.005),
+        "fishing":      (-0.008, -0.005)
     }
 
     hungry     = Signal()

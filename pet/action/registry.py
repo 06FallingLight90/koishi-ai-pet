@@ -115,7 +115,7 @@ def _build_duration_registry() -> dict[str, ActionDef]:
         "fishing": ActionDef(
             name="fishing",
             category="驻留",
-            description="钓鱼，不能真的钓到鱼",
+            description="钓鱼，说不定能钓到鱼",
             params=[],
             usage_example="Action: fishing",
         ),

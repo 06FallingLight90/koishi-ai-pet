@@ -54,7 +54,7 @@ class BehaviorOutput:
 class Behavior(BrainMixin):
 
     def __init__(self, memory_store=None, screen_reader=None, vitals=None, mood=None,
-                 recent_events_fn=None, progress_fn=None):
+                 recent_events_fn=None, once_events_fn=None, progress_fn=None):
         db_path = memory_store._db_path if memory_store else None
         super().__init__(db_path=db_path)
         self._llm = LLMClient()
@@ -69,7 +69,7 @@ class Behavior(BrainMixin):
         self.ctx = ContextBuilder(
             memory_store=memory_store, screen_reader=screen_reader,
             vitals=vitals, mood=mood, brain_mixin=self,
-            recent_events_fn=recent_events_fn,
+            recent_events_fn=recent_events_fn, once_events_fn=once_events_fn,
         )
         self.llm_stats = LlmStats()
 

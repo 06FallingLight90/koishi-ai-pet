@@ -11,6 +11,7 @@ class ActionQueue(QObject):
     """行为队列控制器。"""
 
     changed = Signal()
+    action_started = Signal(str)  # 动作真正开始执行（参数：动作名），用于一次性判定
 
     def __init__(self, actions, parent=None):
         super().__init__(parent)
@@ -106,6 +107,7 @@ class ActionQueue(QObject):
 
         try:
             logger.info(f"[ActionQueue] ▶ {self._format(name, args, kwargs)}")
+            self.action_started.emit(name)
             result = method(*args, **kwargs)
         except Exception as e:
             logger.error(f"[ActionQueue] ✗ {name} failed: {e}")

@@ -10,7 +10,7 @@ from pet.ui.pet_animations import PetAnimator
 from pet.ui.particle import ParticleWidget
 from pet.ui.styles import MENU_QSS
 from pet.ui.settings_window import SettingsWindow
-from pet.action import PetActions, ActionQueue
+from pet.action import PetActions, ActionQueue, outcome
 from pet.brain.prompts import INTERACT_GRABBED, INTERACT_RELEASED, INTERACT_WINDOW_DISAPPEARED
 from pet.tools.registry import TOOL_REGISTRY
 from pet.config import config
@@ -118,6 +118,7 @@ class PetWindow(TransparentWindow):
         self._app = None
         self._event_reaction = False
         self._mouse_penetration = False  # 鼠标穿透开关，默认关
+        self._outcomes_done: set[str] = set()  # 本轮已结算过产出的动作（每轮每个动作最多一条事件）
         self._drag_history: list = []  # [(坐标点, 时间戳毫秒), ...]
         self._press_pos: QPoint | None = None  # 按下时的全局坐标
         self._click_timer = QTimer(self)       # 单击检测定时器
@@ -196,6 +197,7 @@ class PetWindow(TransparentWindow):
 
         self.pet_actions.gravity.falling_started.connect(self._on_falling_started)
         self.pet_actions.gravity.landed.connect(self._on_landed)
+        self.action_queue.action_started.connect(self._on_action_started)
         self.pet_actions.gravity.standing_lost.connect(self._on_standing_lost)
 
         # 初始位置：屏幕中央
@@ -443,6 +445,42 @@ class PetWindow(TransparentWindow):
     def _on_landed(self):
         self.action_queue.resume()
         self.particles.spawn("dust")
+
+    def on_action_batch_started(self):
+        """agent 一轮动作即将入队：清空产出标记，各动作在本轮可再结算一次。
+
+        标记在「入队」时重置、在「动作开始执行」时使用，中间隔着一个队列周期：
+        若上一轮的动作还没跑完，它可能在新一轮的窗口里结算，占掉那一轮的名额。
+        脑周期是分钟级、动作是秒级，正常不会撞上，故不做额外的轮次编号。
+        """
+        self._outcomes_done.clear()
+
+    def _on_action_started(self, name: str):
+        """动作真正开始时结算它的产出（玩法见 pet.action.outcome）。
+
+        每轮每个动作最多结算一次——她一口气连钓几竿也只是同一轮的下水，
+        不该叠加中鱼率。注入方式由玩法自己声明：结果性质只交代一轮，
+        经历性质则进「最近发生了什么」的窗口期。
+        """
+        if not self._agent or name in self._outcomes_done:
+            return
+        spec = outcome.outcome_for(name)
+        if spec is None:
+            return
+        self._outcomes_done.add(name)
+        try:
+            text = spec.handler()
+        except Exception:
+            # action_started 是同线程直连，槽里抛异常会沿 emit 传回队列的 try 块，
+            # 连带把动作本体一起跳过——产出结算失败绝不能影响动作执行
+            logger.exception(f"[PetWindow] 动作 '{name}' 的产出结算失败，已跳过")
+            return
+        if not text:
+            return
+        if spec.once:
+            self._agent.note_once_event(name, text)
+        else:
+            self._agent.note_event(name, text)
 
     def _on_standing_lost(self, window_title: str):
         """站立窗口消失/被遮挡时，触发 LLM 交互反应。"""

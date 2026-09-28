@@ -4,9 +4,12 @@
 的动作产出，注入时机与去重由 outcome 机制统一处理，特效的渲染由 UI 层完成。
 """
 
+import logging
 import random
 
 from pet.action.outcome import register
+
+logger = logging.getLogger(__name__)
 
 # 单次钓鱼的命中概率
 CATCH_RATE = 0.60
@@ -66,6 +69,11 @@ class _FishingOutcome:
     def text(self) -> str:
         result = roll_catch()
         self._effect = "fish" if result is not None else None
+        if result is None:
+            logger.info(f"[Fishing] 判定：未钓到（命中率 {CATCH_RATE:.0%}）")
+        else:
+            name, rarity = result
+            logger.info(f"[Fishing] 判定：钓到 {name}（{rarity}），特效 {self._effect}")
         return format_result(result)
 
     def effect(self) -> str | None:

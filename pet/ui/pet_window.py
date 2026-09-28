@@ -478,6 +478,14 @@ class PetWindow(TransparentWindow):
             self._agent.note_once_event(name, text)
         else:
             self._agent.note_event(name, text)
+        if spec.effect is not None:
+            try:
+                effect_name = spec.effect()
+            except Exception:
+                logger.exception(f"[PetWindow] 动作 '{name}' 的特效结算失败，已跳过")
+                return
+            if effect_name:
+                self.particles.spawn(effect_name)
 
     def _on_standing_lost(self, window_title: str):
         """站立窗口消失/被遮挡时，触发 LLM 交互反应。"""

@@ -38,11 +38,23 @@ class TestFishingIsWired:
 
         assert "fishing" in outcome.registered_actions()
 
-    def test_fishing_is_once(self):
+    def test_fishing_is_recent(self):
         from pet.action import fishing  # noqa: F401
 
-        # 钓鱼是「结果」，应只交代一轮而非在窗口期反复出现
-        assert outcome.outcome_for("fishing").once is True
+        # 钓鱼是「结果」，进入最近事件窗口期供上下文反复引用
+        assert outcome.outcome_for("fishing").once is False
+
+    def test_fishing_effect_only_on_catch(self, monkeypatch):
+        from pet.action import fishing
+
+        spec = outcome.outcome_for("fishing")
+        assert spec.effect is not None
+        monkeypatch.setattr(fishing, "roll_catch", lambda: ("鲫鱼", "common"))
+        spec.handler()
+        assert spec.effect() == "fish"
+        monkeypatch.setattr(fishing, "roll_catch", lambda: None)
+        spec.handler()
+        assert spec.effect() is None
 
     def test_fishing_handler_always_returns_text(self):
         from pet.action import fishing  # noqa: F401

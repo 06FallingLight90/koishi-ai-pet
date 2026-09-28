@@ -1,7 +1,7 @@
 """钓鱼判定：桌宠执行 fishing 动作时掷一次骰子，决定这轮是否有收获。
 
-本模块只负责「结果」与「文案」，并在 import 时把自己注册为 fishing 的动作产出，
-注入时机与去重由 outcome 机制统一处理。
+本模块只负责「结果」「文案」与命中时的特效名，并在 import 时把自己注册为 fishing
+的动作产出，注入时机与去重由 outcome 机制统一处理，特效的渲染由 UI 层完成。
 """
 
 import random
@@ -57,9 +57,22 @@ def format_result(result: tuple[str, str] | None) -> str:
     return f"你钓到了一条{prefix}{name}{suffix}"
 
 
-def _outcome() -> str:
-    """fishing 的动作产出：掷一次骰子并给出文案。"""
-    return format_result(roll_catch())
+class _FishingOutcome:
+    """fishing 的动作产出：一次掷骰同时决定文案与特效，两者必须出自同一结果。"""
+
+    def __init__(self):
+        self._effect: str | None = None  # 命中时应播放的粒子特效名
+
+    def text(self) -> str:
+        result = roll_catch()
+        self._effect = "fish" if result is not None else None
+        return format_result(result)
+
+    def effect(self) -> str | None:
+        return self._effect
 
 
-register("fishing", _outcome, once=False)
+_fishing = _FishingOutcome()
+
+
+register("fishing", _fishing.text, once=False, effect=_fishing.effect)

@@ -227,6 +227,28 @@ def _spawn_bubbles(cx: float, cy: float) -> list[Particle]:
     return particles
 
 
+# 鱼 emoji：字号与食物 emoji 保持一致（见 pet/ui/food_window.py 的 36pt）
+_FISH_TEXT_SIZE = 36
+_FISH_RISE_SPEED = 2.4    # px/tick，匀速上浮
+_FISH_LIFETIME = 1500     # ms，约上升 120px 后淡出消失
+
+
+def _spawn_fish(cx: float, cy: float) -> list[Particle]:
+    """钓到鱼：一个鱼 emoji 从头部出现，匀速上浮到一定高度后淡出。"""
+    return [Particle(
+        x=cx,
+        y=cy,
+        vx=0,
+        vy=-_FISH_RISE_SPEED,
+        gravity=0,  # 匀速平移，不加速
+        lifetime=_FISH_LIFETIME,
+        size=_FISH_TEXT_SIZE,
+        color=QColor(255, 255, 255),
+        shape="text",
+        text="🐟",
+    )]
+
+
 def _draw_star(painter: QPainter, x: float, y: float, size: float, color: QColor, alpha: float):
     """绘制五角星。"""
     c = QColor(color)
@@ -339,6 +361,7 @@ class ParticleWidget(QWidget):
         "dark_hearts": 1 / 4,  # 头部附近
         "bubbles":         1 / 4,  # 头部附近
         "question_marks":  1 / 4,  # 头部附近
+        "fish":            1 / 4,  # 头部附近
         "zzz":             1 / 2,  # 窗口中部
     }
 
@@ -353,9 +376,10 @@ class ParticleWidget(QWidget):
             "dark_hearts": _spawn_dark_hearts,
             "bubbles": _spawn_bubbles,
             "question_marks": _spawn_question_marks,
+            "fish": _spawn_fish,
         }.get(effect)
         if spawner is None:
-            logger.warning(f"Unknown particle effect: {effect!r}, expected one of dust/stars/zzz/notes/hearts/dark_hearts/bubbles/question_marks")
+            logger.warning(f"Unknown particle effect: {effect!r}, expected one of dust/stars/zzz/notes/hearts/dark_hearts/bubbles/question_marks/fish")
             return
 
         if cx is not None:

@@ -9,7 +9,7 @@ import random
 from pet.action.outcome import register
 
 # 单次钓鱼的命中概率
-CATCH_RATE = 0.25
+CATCH_RATE = 0.60
 
 # 稀有度权重：命中后按此比例抽稀有度
 _RARITY_WEIGHTS: dict[str, int] = {"common": 70, "rare": 25, "legendary": 5}
@@ -62,4 +62,4 @@ def _outcome() -> str:
     return format_result(roll_catch())
 
 
-register("fishing", _outcome)
+register("fishing", _outcome, once=False)

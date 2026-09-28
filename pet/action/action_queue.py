@@ -11,7 +11,8 @@ class ActionQueue(QObject):
     """行为队列控制器。"""
 
     changed = Signal()
-    action_started = Signal(str)  # 动作真正开始执行（参数：动作名），用于一次性判定
+    action_started = Signal(str)   # 动作开始执行（参数：动作名）
+    action_finished = Signal(str)  # 动作正常结束；被打断时不发
 
     def __init__(self, actions, parent=None):
         super().__init__(parent)
@@ -22,6 +23,7 @@ class ActionQueue(QObject):
         self._stopped = False
         self._paused = False
         self._active_anim: QPropertyAnimation | None = None
+        self._active_name: str | None = None  # 正在执行的动作名，让位时结算
         self._waiting_anim_finished: bool = False
         self._waiting_gravity_walk: bool = False
         # 超时保护：防止循环动作永不发 animation_finished 导致队列永久阻塞
@@ -44,6 +46,7 @@ class ActionQueue(QObject):
         self._actions.stop_all_anims()
         # 停止正在播放的帧动画，防止 clear 后无人监听 animation_finished 导致卡帧
         self._actions._anim.stop()
+        self._active_name = None  # 中断：不结算
         self._running = False
         self.changed.emit()
 
@@ -61,12 +64,14 @@ class ActionQueue(QObject):
         self._actions._stop_drive(switch_idle=False)
         self._actions.stop_all_anims()
         self._actions._anim.stop()
+        self._active_name = None  # 中断：不结算
         self._running = False
         self._stopped = True
         self.changed.emit()
 
     def pause(self):
         self._disconnect_active()
+        self._active_name = None  # 打断，不结算
         self._running = False
         self._paused = True
         self.changed.emit()
@@ -80,6 +85,7 @@ class ActionQueue(QObject):
         if self._paused:
             return
         self._disconnect_active()
+        self._settle_current()
 
         if self._cursor >= len(self._queue):
             self._queue.clear()
@@ -107,8 +113,10 @@ class ActionQueue(QObject):
 
         try:
             logger.info(f"[ActionQueue] ▶ {self._format(name, args, kwargs)}")
-            self.action_started.emit(name)
             result = method(*args, **kwargs)
+            # 调用成功才算真正开始：失败的动作不发开始信号，也不参与结算
+            self.action_started.emit(name)
+            self._active_name = name
         except Exception as e:
             logger.error(f"[ActionQueue] ✗ {name} failed: {e}")
             self._run_next()
@@ -138,11 +146,19 @@ class ActionQueue(QObject):
         self._actions.gravity.suppress_idle = True  # 防止重力 tick 覆盖 sleep/sit/thinking
         self._timeout_timer.start(self._anim_timeout_ms(kwargs))
 
+    def _settle_current(self):
+        """上一个动作让位给下一个动作：发出 finished。中断路径只清记录，不走这里。"""
+        name, self._active_name = self._active_name, None
+        if name is not None:
+            self.action_finished.emit(name)
+
     def _on_action_done(self, *args):
         self._disconnect_active()
         self._actions.gravity._tick()   #立即调用一次tick，防止队列执行下一个动作
         if self._actions.gravity.falling:
-            return  # PetWindow 的 falling_started→pause + landed→resume 会继续队列
+            # 动画已播完，先结算再交给 pause/resume，否则这次产出会随 pause 一起丢掉
+            self._settle_current()
+            return
         self._run_next()
 
     @staticmethod

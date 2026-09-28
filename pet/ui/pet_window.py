@@ -197,7 +197,7 @@ class PetWindow(TransparentWindow):
 
         self.pet_actions.gravity.falling_started.connect(self._on_falling_started)
         self.pet_actions.gravity.landed.connect(self._on_landed)
-        self.action_queue.action_started.connect(self._on_action_started)
+        self.action_queue.action_finished.connect(self._on_action_finished)
         self.pet_actions.gravity.standing_lost.connect(self._on_standing_lost)
 
         # 初始位置：屏幕中央
@@ -447,20 +447,18 @@ class PetWindow(TransparentWindow):
         self.particles.spawn("dust")
 
     def on_action_batch_started(self):
-        """agent 一轮动作即将入队：清空产出标记，各动作在本轮可再结算一次。
+        """agent 一轮动作即将入队：清空产出标记。
 
-        标记在「入队」时重置、在「动作开始执行」时使用，中间隔着一个队列周期：
-        若上一轮的动作还没跑完，它可能在新一轮的窗口里结算，占掉那一轮的名额。
-        脑周期是分钟级、动作是秒级，正常不会撞上，故不做额外的轮次编号。
+        标记在入队时重置、在动作结束时使用，中间隔着一个队列周期，所以上一轮
+        还没跑完的动作可能占掉新一轮的名额。不为此引入轮次编号，接受该偏差。
         """
         self._outcomes_done.clear()
 
-    def _on_action_started(self, name: str):
-        """动作真正开始时结算它的产出（玩法见 pet.action.outcome）。
+    def _on_action_finished(self, name: str):
+        """动作正常结束时结算它的产出（玩法见 pet.action.outcome）。
 
-        每轮每个动作最多结算一次——她一口气连钓几竿也只是同一轮的下水，
-        不该叠加中鱼率。注入方式由玩法自己声明：结果性质只交代一轮，
-        经历性质则进「最近发生了什么」的窗口期。
+        挂结束而非开始：动作时长接近脑周期，常横跨到下一轮之后才跑完。
+        每轮每个动作最多结算一次，注入方式由玩法声明（一次性 / 窗口期）。
         """
         if not self._agent or name in self._outcomes_done:
             return
@@ -471,8 +469,7 @@ class PetWindow(TransparentWindow):
         try:
             text = spec.handler()
         except Exception:
-            # action_started 是同线程直连，槽里抛异常会沿 emit 传回队列的 try 块，
-            # 连带把动作本体一起跳过——产出结算失败绝不能影响动作执行
+            # 槽里抛异常会顺信号冒泡进 Qt 事件循环，产出失败不该牵连调用方
             logger.exception(f"[PetWindow] 动作 '{name}' 的产出结算失败，已跳过")
             return
         if not text:

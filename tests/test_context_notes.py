@@ -113,6 +113,16 @@ class TestRecentEventsNote:
 
 
 class TestNeedsNote:
+    @pytest.fixture(autouse=True)
+    def _no_circadian(self, monkeypatch):
+        """默认屏蔽作息需求。
+
+        作息由运行时刻（本地钟点）决定，会让断言随跑测时间漂移——CI 跑在 UTC，
+        夜里会凭空多出「熬夜太久了」。需要测作息的用例自行覆盖 _circadian_need。
+        """
+        monkeypatch.setattr(ContextBuilder, "_circadian_need",
+                            staticmethod(lambda hour: None))
+
     def _builder(self, satiety=100, energy=100, joy=100, affection=100, sanity=100):
         return ContextBuilder(
             vitals=_FakeVitals(satiety, energy),

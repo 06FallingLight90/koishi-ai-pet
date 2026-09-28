@@ -1,6 +1,6 @@
 """工具框架契约测试：注册表检索、schema 生成、执行器容错。"""
 
-import time
+import threading
 
 import pytest
 
@@ -21,8 +21,12 @@ def _bad_signature(unknown_arg: str = "") -> dict:
     return {"summary": unknown_arg}
 
 
+# 阻塞在可控事件上：超时判定后由测试主动释放，避免真实 sleep 拖慢套件与线程残留
+_slow_gate = threading.Event()
+
+
 def _slow() -> dict:
-    time.sleep(0.5)
+    _slow_gate.wait(timeout=5)
     return {"summary": "太慢了"}
 
 
@@ -133,9 +137,13 @@ class TestExecutorRouting:
         assert "工具炸了" in result.error
 
     def test_timeout_reported(self, executor):
-        result = executor.execute([ToolCall("demo__slow", {})])[0]
-        assert result.success is False
-        assert "超时" in result.error
+        try:
+            result = executor.execute([ToolCall("demo__slow", {})])[0]
+            assert result.success is False
+            assert "超时" in result.error
+        finally:
+            _slow_gate.set()  # 释放仍在阻塞的 handler 线程
+            _slow_gate.clear()
 
     def test_image_and_context_extracted_from_data(self, executor):
         result = executor.execute([ToolCall("demo__shot", {})])[0]

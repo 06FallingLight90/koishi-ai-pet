@@ -1,5 +1,6 @@
 """上下文备注章节测试：最近事件、未满足需求、作息困倦、旧事记忆、感受描述、窗口标题提取。"""
 
+import re
 import time
 from types import SimpleNamespace
 
@@ -112,7 +113,70 @@ class TestRecentEventsNote:
         assert "事件6" in note
 
 
+class TestOnceEvents:
+    """一次性事件：注入一轮后即被消费，不留在窗口里反复出现。"""
+
+    def _builder(self, once_events):
+        """once_events 为可被消费的列表，模拟 PetAgent.take_once_events。"""
+        def take():
+            events, once_events[:] = list(once_events), []
+            return events
+
+        return ContextBuilder(recent_events_fn=lambda: [], once_events_fn=take)
+
+    def test_injected_then_consumed(self):
+        builder = self._builder([("fishing", time.time(), "你钓到了一条鲫鱼")])
+        assert "你钓到了一条鲫鱼" in builder._recent_events_note()
+        assert builder._recent_events_note() == ""
+
+    def test_line_carries_time_prefix(self):
+        # 一次性事件与窗口期事件同格式：[HH:MM] 文案
+        builder = self._builder([("fishing", time.time(), "你钓到了一条鲫鱼")])
+        line = builder._recent_events_note().splitlines()[0]
+        assert re.fullmatch(r"\[\d{2}:\d{2}\] 你钓到了一条鲫鱼", line)
+
+    def test_no_provider_returns_empty(self):
+        assert ContextBuilder()._recent_events_note() == ""
+
+    def test_provider_exception_ignored(self):
+        builder = ContextBuilder(recent_events_fn=lambda: [], once_events_fn=lambda: 1 / 0)
+        assert builder._recent_events_note() == ""
+
+    def test_merged_with_window_events_in_time_order(self):
+        now = time.time()
+        builder = ContextBuilder(
+            recent_events_fn=lambda: [("head_pat", now - 10, "")],
+            once_events_fn=lambda: [("fishing", now, "你钓到了一条鲤鱼")],
+        )
+        note = builder._recent_events_note()
+        assert note.index("用户摸了摸你的头") < note.index("你钓到了一条鲤鱼")
+
+    def test_same_kind_not_deduped(self):
+        # 每次钓鱼都是独立的一次经历，不该像窗口事件那样只留最近一条
+        now = time.time()
+        builder = ContextBuilder(
+            recent_events_fn=lambda: [],
+            once_events_fn=lambda: [
+                ("fishing", now - 5, "你钓到了一条鲫鱼"),
+                ("fishing", now, "你钓到了一条鲤鱼"),
+            ],
+        )
+        note = builder._recent_events_note()
+        assert "鲫鱼" in note
+        assert "鲤鱼" in note
+
+
 class TestNeedsNote:
+    @pytest.fixture(autouse=True)
+    def _no_circadian(self, monkeypatch):
+        """默认屏蔽作息需求。
+
+        作息由运行时刻（本地钟点）决定，会让断言随跑测时间漂移——CI 跑在 UTC，
+        夜里会凭空多出「熬夜太久了」。需要测作息的用例自行覆盖 _circadian_need。
+        """
+        monkeypatch.setattr(ContextBuilder, "_circadian_need",
+                            staticmethod(lambda hour: None))
+
     def _builder(self, satiety=100, energy=100, joy=100, affection=100, sanity=100):
         return ContextBuilder(
             vitals=_FakeVitals(satiety, energy),

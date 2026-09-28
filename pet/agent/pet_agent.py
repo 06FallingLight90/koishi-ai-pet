@@ -49,6 +49,7 @@ class BrainWorker(QObject):
 class PetAgent(QObject):
 
     action_requested = Signal(str, object, object)
+    action_batch_started = Signal()  # 一轮动作即将入队（供「每轮只做一次」的判定重置状态）
     speak_requested  = Signal(str, int)
     emotion_requested = Signal(str, int)
     state_changed    = Signal(str)
@@ -62,6 +63,7 @@ class PetAgent(QObject):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._recent_events: list[tuple[str, float, str]] = []  # 供上下文注入的最近事件（wall-clock 时间戳）
+        self._once_events: list[tuple[str, float, str]] = []  # 只注入一轮的事件（如钓鱼收获），被消费后即消失
         self._brain_busy_since: float | None = None  # 进入脑线程占用状态（autonomous/interacting）的时刻（monotonic）
         self._brain_progress_ts: float | None = None  # 最近一次管线进展的时刻（monotonic）
         self.memory_store = get_memory_store()
@@ -70,7 +72,7 @@ class PetAgent(QObject):
         self.screen_reader.enable()
         self.vitals = Vitals(parent=self)
         self.mood = Mood(parent=self)
-        self.behavior = Behavior(memory_store=self.memory_store, screen_reader=self.screen_reader, vitals=self.vitals, mood=self.mood, recent_events_fn=self.recent_events, progress_fn=self.note_brain_progress)
+        self.behavior = Behavior(memory_store=self.memory_store, screen_reader=self.screen_reader, vitals=self.vitals, mood=self.mood, recent_events_fn=self.recent_events, once_events_fn=self.take_once_events, progress_fn=self.note_brain_progress)
         self.scheduler = Scheduler(self)
         self.state_machine = StateMachine(parent=self)
         self.state_machine.state_changed.connect(self.state_changed)
@@ -89,6 +91,7 @@ class PetAgent(QObject):
         self.state_machine.state_changed.connect(self._on_state_changed)
 
     _RECENT_EVENT_MAX = 16
+    _ONCE_EVENT_MAX = 16  # 一次性事件积压上限（正常会在下一轮被消费掉，纯防御）
 
     def note_event(self, kind: str, text: str = ""):
         """记录一次事件，供上下文「最近发生了什么」注入。
@@ -103,6 +106,17 @@ class PetAgent(QObject):
     def recent_events(self) -> list[tuple[str, float, str]]:
         """返回最近事件快照（脑线程构造上下文时读取）。"""
         return list(self._recent_events)
+
+    def note_once_event(self, kind: str, text: str):
+        """记录一个只注入一轮的事件，被上下文消费一次后即消失"""
+        self._once_events.append((kind, time.time(), text))
+        if len(self._once_events) > self._ONCE_EVENT_MAX:
+            del self._once_events[: len(self._once_events) - self._ONCE_EVENT_MAX]
+
+    def take_once_events(self) -> list[tuple[str, float, str]]:
+        """取走全部待注入的一次性事件并清空（每轮构造上下文时调用一次）。"""
+        events, self._once_events = self._once_events, []
+        return events
 
     def note_head_pat(self):
         """记录一次用户摸头（单击宠物），供上下文注入。"""
@@ -551,6 +565,8 @@ class PetAgent(QObject):
                     pass
             if result.summary:
                 self.behavior.add_context(role="assistant", content=result.summary)
+            if result.actions:
+                self.action_batch_started.emit()
             for step in result.actions:
                 self._emit_action(step.name, step.args, step.kwargs)
             if result.emotion:

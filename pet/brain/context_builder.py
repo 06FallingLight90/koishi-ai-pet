@@ -21,13 +21,14 @@ class ContextBuilder:
     """
 
     def __init__(self, memory_store=None, screen_reader=None, vitals=None, mood=None,
-                 brain_mixin=None, recent_events_fn=None):
+                 brain_mixin=None, recent_events_fn=None, once_events_fn=None):
         self._memory_store = memory_store
         self._screen_reader = screen_reader
         self._vitals = vitals
         self._mood = mood
         self._brain = brain_mixin
         self._recent_events_fn = recent_events_fn
+        self._once_events_fn = once_events_fn
         self._active_needs: dict[str, float] = {}  # 未满足需求: key → 起始时间戳
         self._recent_event_ids: set[int] = set()   # 上一轮注入的旧事 id，避免连续复读
 
@@ -288,36 +289,45 @@ class ContextBuilder:
         return [{"role": "system", "content": system}, *dialog]
 
     def _recent_events_note(self) -> str:
-        """把窗口期内发生的事件整理为「最近发生了什么」章节正文。
-
-        同一类型只保留最近一次；按时间正序排列（倒序会把因果颠倒），
-        超过 _MAX_EVENT_LINES 时保留最近的若干条；文案优先取事件自带的 text。
-        """
-        if not self._recent_events_fn:
-            return ""
-        try:
-            events = self._recent_events_fn() or []
-        except Exception:
-            return ""
+        """把「最近发生了什么」整理成一行一条的章节正文"""
+        entries: list[tuple[float, str]] = []  # (时间戳, 文案)
         window_s = config.RECENT_EVENT_WINDOW_S
         now = time.time()
-        latest: dict[str, tuple[float, str]] = {}
-        for kind, ts, text in events:
-            if now - ts > window_s:
-                continue
-            label = text or self._EVENT_LABELS.get(kind)
-            if not label:
-                continue
-            if kind not in latest or ts > latest[kind][0]:
-                latest[kind] = (ts, label)
-        if not latest:
+
+        if self._recent_events_fn:
+            try:
+                events = self._recent_events_fn() or []
+            except Exception:
+                events = []
+            latest: dict[str, tuple[float, str]] = {}
+            for kind, ts, text in events:
+                if now - ts > window_s:
+                    continue
+                label = text or self._EVENT_LABELS.get(kind)
+                if not label:
+                    continue
+                if kind not in latest or ts > latest[kind][0]:
+                    latest[kind] = (ts, label)
+            entries.extend(latest.values())
+
+        if self._once_events_fn:
+            try:
+                once = self._once_events_fn() or []
+            except Exception:
+                once = []
+            for kind, ts, text in once:
+                label = text or self._EVENT_LABELS.get(kind)
+                if label:
+                    entries.append((ts, label))
+
+        if not entries:
             return ""
-        ordered = sorted(latest.items(), key=lambda kv: kv[1][0])
-        if len(ordered) > self._MAX_EVENT_LINES:
-            ordered = ordered[-self._MAX_EVENT_LINES:]
+        entries.sort(key=lambda e: e[0])
+        if len(entries) > self._MAX_EVENT_LINES:
+            entries = entries[-self._MAX_EVENT_LINES:]
         return "\n".join(
             f"[{BrainMixin._format_context_time(ts)}] {label}"
-            for kind, (ts, label) in ordered
+            for ts, label in entries
         )
 
     def _build_needs_note(self) -> str:

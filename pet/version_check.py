@@ -16,9 +16,9 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - py>=3.11 自带
     tomllib = None
 
-from packaging.version import InvalidVersion, parse as _parse_ver
-
 from PySide6.QtCore import QObject, QThread, Qt, Signal, Slot
+
+from pet.version_utils import strip_v as _strip_v, ver_newer as _ver_newer
 
 logger = logging.getLogger(__name__)
 
@@ -76,20 +76,6 @@ def get_local_version() -> str:
         pass
     _local_version_cache = ""
     return ""
-
-
-def _strip_v(tag: str) -> str:
-    """去掉 tag 开头的单个 v/V 前缀（精确剥离，避免 lstrip 的字符集陷阱）。"""
-    return tag[1:] if tag[:1] in ("v", "V") else tag
-
-
-def _ver_newer(remote: str, local: str) -> bool:
-    """判断 remote 是否比 local 新（PEP 440 规范比较）。"""
-    try:
-        return _parse_ver(remote) > _parse_ver(local)
-    except InvalidVersion:
-        logger.debug(f"[VersionCheck] 版本号无法解析，跳过比较: remote={remote} local={local}")
-        return False
 
 
 def _build_headers() -> dict:

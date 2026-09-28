@@ -85,25 +85,41 @@ class TestTimerRestore:
         assert timer_storage.load_all() == []
         assert fake_ctx.alarms == []
 
-    def test_offline_elapsed_timer_fires_immediately(self, fake_ctx, timer_storage):
-        # 上次关机时间在过去 → 期间已到点，恢复时直接补发提醒
-        shutdown = (datetime.now() - timedelta(hours=1)).isoformat()
-        timer_storage.save("t1", "timer_t1", "吃药", 60, time.time() + 30)
+    def _mark_shutdown(self, timer_storage, hours_ago: float, right_now: float,
+                       label: str = "吃药"):
+        """写入"关机发生在 hours_ago 小时前"，并注册一个到点为 right_now 的 timer。"""
+        shutdown = (datetime.now() - timedelta(hours=hours_ago)).isoformat()
+        timer_storage.save("t1", "timer_t1", label, 60, right_now)
         timer_storage._conn.execute(
             "INSERT OR REPLACE INTO timer_meta (key, value) VALUES ('shutdown_time', ?)",
             (shutdown,),
         )
         timer_storage._conn.commit()
+
+    def test_offline_elapsed_timer_fires_immediately(self, fake_ctx, timer_storage):
+        # 关机发生在 1 小时前，timer 的到点时间落在离线区间内 → 恢复时补发提醒
+        self._mark_shutdown(timer_storage, hours_ago=1, right_now=time.time() - 30)
         tool = TimerTool(storage=timer_storage)
         tool.restore_from_storage()
 
-        # 离线期间已过点：直接补发提醒并清库，不再注册闹钟
         assert fake_ctx.speeches and "吃药" in fake_ctx.speeches[0]
         assert fake_ctx.notices and fake_ctx.notices[0][1] == "吃药"
         assert fake_ctx.events[0][0] == "timer"
         assert fake_ctx.alarms == []
         assert timer_storage.load_all() == []
         assert tool.list_timers()["count"] == 0
+
+    def test_offline_pending_timer_reregisters_alarm(self, fake_ctx, timer_storage):
+        # 关机发生在 1 小时前，但 timer 尚未到点 → 仍应注册闹钟，不得立即触发
+        self._mark_shutdown(timer_storage, hours_ago=1, right_now=time.time() + 300,
+                            label="喝水")
+        tool = TimerTool(storage=timer_storage)
+        tool.restore_from_storage()
+
+        assert fake_ctx.alarms, "未到点的 timer 不应被立即触发"
+        assert fake_ctx.alarms[0][2] == "timer_t1"
+        assert fake_ctx.speeches == []
+        assert tool.list_timers()["count"] == 1
 
     def test_pending_timer_reregisters_alarm(self, fake_ctx, timer_storage):
         timer_storage.save("t2", "timer_t2", "喝水", 600, time.time() + 300)

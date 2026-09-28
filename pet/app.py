@@ -192,6 +192,7 @@ def main():
     agent.game_board_requested.connect(_dispatch_game_board)
 
     agent.action_requested.connect(window.queue_enqueue_action)
+    agent.action_batch_started.connect(window.on_action_batch_started)
     agent.emotion_requested.connect(
         lambda e, d: emotion_bubble.show_emotion(e, d) if window.isVisible() else None
     )

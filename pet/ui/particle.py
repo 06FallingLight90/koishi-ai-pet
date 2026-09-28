@@ -3,6 +3,7 @@
 import math
 import random
 import logging
+from collections.abc import Callable
 
 from PySide6.QtCore import Qt, QTimer, QObject, Signal, QPointF
 from PySide6.QtGui import QPainter, QColor, QPen, QFont, QPolygonF, QPainterPath
@@ -16,7 +17,7 @@ logger = logging.getLogger(__name__)
 class Particle:
     __slots__ = (
         "x", "y", "vx", "vy", "gravity",
-        "lifetime", "age", "size", "color", "shape", "text",
+        "lifetime", "age", "size", "color", "shape", "text", "center_x",
     )
 
     def __init__(
@@ -29,6 +30,7 @@ class Particle:
         color: QColor = QColor(255, 200, 100),
         shape: str = "circle",
         text: str = "",
+        center_x: bool = False,
     ):
         self.x = x
         self.y = y
@@ -41,6 +43,7 @@ class Particle:
         self.color = color
         self.shape = shape  # 圆形 / 星形 / 文字
         self.text = text    # shape=="text" 时使用
+        self.center_x = center_x  # 文字是否以 x 为水平中心绘制（默认 x 为左边缘）
 
     @property
     def alive(self) -> bool:
@@ -268,17 +271,43 @@ def _spawn_bubbles(cx: float, cy: float) -> list[Particle]:
     return particles
 
 
-# 特效名 → 生成函数（动作映射与调试面板都按这里的名字取用）
-_SPAWNERS = {
+# 鱼 emoji：字号与食物 emoji 保持一致（见 pet/ui/food_window.py 的 36pt）
+_FISH_TEXT_SIZE = 36
+_FISH_RISE_SPEED = 1.4    # px/tick，匀速上浮
+_FISH_LIFETIME = 1500     # ms，约上升 70px 后淡出消失
+# 上浮高度须留在粒子窗口内：窗口上边距仅 _MARGIN=100px，且 emoji 画在基线之上
+# （36pt 时约 48px 高），升太满会在顶部被裁掉。70px 可保证字形完整淡出。
+
+
+def _spawn_fish(cx: float, cy: float) -> list[Particle]:
+    """钓到鱼：一个鱼 emoji 从头部出现，匀速上浮到一定高度后淡出。"""
+    return [Particle(
+        x=cx,
+        y=cy,
+        vx=0,
+        vy=-_FISH_RISE_SPEED,
+        gravity=0,  # 匀速平移，不加速
+        lifetime=_FISH_LIFETIME,
+        size=_FISH_TEXT_SIZE,
+        color=QColor(255, 255, 255),
+        shape="text",
+        text="🐟",
+        center_x=True,  # 从头部中心上浮，而非以左边缘对齐
+    )]
+
+
+# 特效名 → 生成器：新增特效只需在此登记，调试面板会自动列出
+_SPAWNERS: dict[str, Callable[[float, float], list[Particle]]] = {
     "dust": _spawn_dust,
     "stars": _spawn_stars,
     "zzz": _spawn_zzz,
     "notes": _spawn_notes,
     "hearts": _spawn_hearts,
     "dark_hearts": _spawn_dark_hearts,
-    "question_marks": _spawn_question_marks,
     "bubbles": _spawn_bubbles,
+    "question_marks": _spawn_question_marks,
     "spiral": _spawn_spiral,
+    "fish": _spawn_fish,
 }
 
 
@@ -366,7 +395,11 @@ def _draw_particle(painter: QPainter, p: Particle):
         font = QFont("Microsoft YaHei", int(p.size))
         painter.setFont(font)
         painter.setPen(QPen(c))
-        painter.drawText(int(p.x), int(p.y), p.text)
+        # drawText 默认以 (x, y) 为「左边缘 + 基线」，center_x 时把 x 当作水平中心
+        tx = p.x
+        if p.center_x:
+            tx -= painter.fontMetrics().horizontalAdvance(p.text) / 2
+        painter.drawText(int(tx), int(p.y), p.text)
 
 
 
@@ -424,15 +457,20 @@ class ParticleWidget(QWidget):
         "bubbles":         1 / 4,  # 头部附近
         "question_marks":  1 / 4,  # 头部附近
         "spiral":          1 / 4,  # 头部附近（与爱心同一起点）
+        "fish":            1 / 4,  # 头部附近
         "zzz":             1 / 2,  # 窗口中部
     }
+
+    @staticmethod
+    def effect_names() -> tuple[str, ...]:
+        """全部已注册的粒子特效名（供调试面板扫描列出）。"""
+        return tuple(_SPAWNERS)
 
     def spawn(self, effect: str, cx: float | None = None, cy: float | None = None):
         """触发粒子特效"""
         spawner = _SPAWNERS.get(effect)
         if spawner is None:
-            logger.warning(f"Unknown particle effect: {effect!r}, "
-                           f"expected one of {'/'.join(_SPAWNERS)}")
+            logger.warning(f"Unknown particle effect: {effect!r}, expected one of {'/'.join(_SPAWNERS)}")
             return
 
         if cx is not None:

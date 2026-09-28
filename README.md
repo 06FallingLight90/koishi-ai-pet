@@ -116,6 +116,27 @@ python -m pet
 
 > 模型兼容 OpenAI 格式接口，硅基流动、DeepSeek 等均可直接填入。Ollama 本地部署理论上也支持。
 
+## 开发与测试
+
+跑测试需要 **PySide6（运行时依赖）+ pytest（dev 依赖）**，用 `[dev]` 一次装齐：
+
+```bash
+# Windows (PowerShell)
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+pip install -e ".[dev]"
+python -m pytest
+
+# macOS / Linux
+python3 -m venv venv
+source venv/bin/activate
+pip install -e ".[dev]"
+python -m pytest
+```
+
+> 只装 `pip install -e .`（不带 `[dev]`）会缺少 pytest，测试无法运行——这是本地"测试跑不起来"最常见的原因。
+> 测试范围由 `pyproject.toml` 的 `[tool.pytest.ini_options]` 决定（`testpaths = ["tests"]`）。
+
 ## 更新
 
 项目提供一键更新脚本，会自动从 GitHub 下载最新 Release 源码并更新依赖，**保留你的虚拟环境、配置和数据**。

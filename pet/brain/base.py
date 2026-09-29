@@ -359,7 +359,9 @@ class BrainMixin:
         normal_chats = [e for e in ordinary if not e.content.startswith("[工具调用]")]
 
         # 正常聊天的空间 = 总空间 - 摘要空间 - 工具调用空间
-        base_limit = self._MAX_ENTRIES - len(summaries) - len(tool_calls)
+        # clamp 到 0：预留席位超限时普通对话要全部进摘要队列，
+        # 否则负数切片会按"从倒数第 N 个开始"的语义误保留一批
+        base_limit = max(0, self._MAX_ENTRIES - len(summaries) - len(tool_calls))
         soft_limit = base_limit + self._EVICT_BATCH_SIZE
         if len(normal_chats) > soft_limit:
             normal_chats.sort(key=lambda e: e.timestamp, reverse=True)

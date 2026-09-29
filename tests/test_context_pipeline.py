@@ -153,3 +153,25 @@ class TestPoolCapUnified:
 
     def test_max_summaries_property_removed(self):
         assert not hasattr(BrainMixin, "_MAX_SUMMARIES")
+
+
+class TestEvictContextNegativeBaseLimit:
+    """摘要与工具调用的预留席位超过上限时，普通对话要全部被淘汰进摘要队列，
+    不能因为 base_limit 变负而被负数切片误保留。"""
+
+    def test_normal_chats_all_queued_when_reserved_slots_exceed_cap(self, monkeypatch):
+        monkeypatch.setattr(config, "CONTEXT_HISTORY_ENTRIES", 3)
+        entries = (
+            [_entry(f"摘要{i}", summary=True, age_s=100 + i) for i in range(2)]
+            + [_entry(f"[工具调用] tool{i}", age_s=50 + i) for i in range(2)]
+            + [_entry(f"对话{i}", age_s=i) for i in range(8)]
+        )
+        brain = _brain(entries)
+        brain._evict_context()
+
+        remaining_normal = [
+            e for e in brain._context
+            if not e.is_summary and not e.content.startswith("[工具调用]")
+        ]
+        assert remaining_normal == []
+        assert len(brain._pending_summary_queue) == 8

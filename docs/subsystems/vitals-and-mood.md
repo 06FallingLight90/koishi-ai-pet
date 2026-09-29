@@ -80,6 +80,9 @@
 
 ## 4. 数值如何影响提示词
 
+本节是**档位、阈值与文案**的权威定义；注入机制（哪些任务注入哪个块、块的拼接与生命周期）见
+[context-and-prompts.md](context-and-prompts.md) §1、§3、§4。
+
 `ContextBuilder._build_feeling()` 把数值译成一句话，注入 system 的 `[你现在的状态]` 块（所有任务都注入）：
 
 | 数值 | ≥80 | ≥60 | ≥40 | ≥20 | <20 |
@@ -96,7 +99,8 @@
   60 在两处都得是中性档）；
 - `sanity` 用 `config.SANITY_CRITICAL_THRESHOLD`（默认 20）而非 60 —— 理智平时就在阈值附近徘徊，
   用 60 会把正常状态全算成「惦记」；
-- 需求注入只在 `autonomous` / `chat` 两个任务生效（`_NEEDS_TASKS`），`interact` 不注入。
+- 注入端只在 `autonomous` / `chat` 两个任务生效（`_NEEDS_TASKS`），`interact` 不注入——
+  哪些块在哪个任务出现见 [context-and-prompts.md](context-and-prompts.md) §1、§4。
 
 作息需求（`_circadian_need`）与数值无关，纯按钟点：23:00~06:00 为 `bedtime`（超过 2 小时改口「熬夜太久了」）、
 13 点为 `drowsy`。system prompt 里不写具体钟点（钟点每轮都变，会破坏 prompt 缓存）。

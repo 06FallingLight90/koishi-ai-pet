@@ -52,29 +52,20 @@
 若恰好进入下落则「先结算、再挂起」；拖拽时 `pause + clear + grabbed()`，松手 `resume()`，
 速度超过 80px/s 会 `apply_impulse()` 甩出去。
 
-## 3. 帧动画配置
+## 3. 帧动画的加载与运行
 
-`assets/actions/<动作名>/<动作名>.json`（**必须与目录同名**，否则整个动作不加载）：
+素材侧契约（目录、命名、json 字段与取值）见 [assets-pipeline.md](assets-pipeline.md) §2；
+这里只讲运行期怎么消费它：
 
-```json
-{
-  "desc": "坐下动画",
-  "tick_counts": 60,
-  "frame_ratios": [0.9, 0.1],
-  "loop": true,
-  "breath": {"amplitude": 2, "scale_x": 1.0, "scale_y": 1.02, "period_ticks": 60},
-  "note": "自由备注"
-}
-```
-
-- **帧序** = 目录里帧文件的**字典序**（支持 png/jpg/jpeg/bmp/webp）。帧数 ≥10 时要零填充（`10.webp` 会排在 `2.webp` 前）。
-- `tick_counts` 是一个循环的总 tick 数，一个 tick = `round(1000 / PET_FPS)` ms（默认 15 FPS → 67ms）。
-- `frame_ratios` 每帧占比、和应为 1.0；长度和帧数对不上（或有非正数）时丢弃改等分，长度对但总和偏离 1 超过 0.01 时按比例归一化，两种情况都只打 warning。
-- `breath` 范围：`amplitude` 0~4px、`scale_x/scale_y` 0.5~2.0、`period_ticks` 0~900；数值越界直接夹紧到边界，类型不对才整块忽略（打 warning）。
-  呼吸位移只向上抬、缩放锚点由绘制方保证在脚底。
-- 异常处理：缺 json / JSON 损坏 / 目录无帧图 → `play()` 返回 False，队列打 warning 后跳过该动作；
-  启动时若连 `idle` 都没有，会退化成 emoji 占位。
+- **tick 与 FPS 耦合**：一个 tick = `round(1000 / PET_FPS)` ms（默认 15 FPS → 67ms），
+  所以 `tick_counts × tick` 决定一次循环或一次性播放的时长——改 `PET_FPS` 会整体改变动画速度。
+- **容错都在加载期静默修**：`frame_ratios` 与帧数对不上（或有非正数）→ 丢弃改等分；
+  长度对但总和偏离 1 超过 0.01 → 按比例归一化；`tick_counts` 非正或小于帧数 → 抬到帧数；
+  `breath` 数值越界 → 夹紧到边界，类型不对才整块忽略。以上都只打 warning，画面上看不出被改过。
+- **加载失败即跳过**：缺 json / JSON 损坏 / 目录无帧图 → `play()` 返回 False，
+  队列打 warning 后跳过该动作；启动时若连 `idle` 都没有，会退化成 emoji 占位。
 - 动作配置**有缓存且没有失效入口**：换素材或改 json 之后需要重启才生效。
+- 呼吸姿态的位移只向上抬、缩放锚点由绘制方保证在脚底。
 
 ## 4. 粒子
 
@@ -98,7 +89,7 @@
 
 | 步骤 | 漏了会怎样 |
 |---|---|
-| 放素材 `assets/actions/<name>/` + 同名 json | `play()` 返回 False，动作被队列跳过（打 warning） |
+| 放素材 `assets/actions/<name>/` + 同名 json（契约与检查清单见 [assets-pipeline.md](assets-pipeline.md) §2、§3） | `play()` 返回 False，动作被队列跳过（打 warning） |
 | 在 `PetActions` 写方法 | 反射取不到 → 静默跳过（不报错） |
 | 在 `pet/action/registry.py` 注册（带时长还要进 `_DURATION_ACTION_DEFS`） | 模型输出这个动作名会被丢弃 |
 | 可选：`_ACTION_PARTICLES`（特效）、`ACTION_VITALS_DELTA`（消耗）、`outcome.register()`（产出） | 无特效 / 不消耗 / 无事件 |
@@ -109,10 +100,7 @@
 
 其它容易踩的：
 
-1. **帧名字典序**：帧数到两位数就要零填充。
-2. **`duration` 只对循环动画生效**；一次性动画（如 `dejected`）靠 `tick_counts` 决定时长。
-3. **属性动画路径没有超时保护**，只靠 `finished`；写新的位移动作时注意。
-4. **动作名 ≠ 素材目录名**：`walk` → `walk_left/right`、`drive` → `driving_left/right`；
+1. **属性动画路径没有超时保护**，只靠 `finished`；写新的位移动作时注意。
+2. **动作名 ≠ 素材目录名**：`walk` → `walk_left/right`、`drive` → `driving_left/right`；
    `fade_in/fade_out` 没有素材；`idle` / `falling` / `grim` / `grabbed` 是系统动画，不在动作注册表里。
-5. **`grim` 不是模型能输出的动作**，由理智驱动切换。
-6. 改素材或 json 后**必须重启**（配置有缓存）。
+3. **`grim` 不是模型能输出的动作**，由理智驱动切换。

@@ -1,8 +1,8 @@
 # 素材规格
 
 桌宠的每一帧动画都是 `assets/actions/<动作名>/` 下的透明 webp，配一个同名 json。
-本文规定**仓库要收什么**：规格、目录、命名、入库检查清单；
-帧动画各字段的语义见 [actions-and-animation.md](actions-and-animation.md) §3。
+本文是**素材契约的唯一入口**：规格、目录命名、配置字段、入库检查清单都写在这里；
+素材在运行期怎么被加载消费（容错、缓存、队列副作用）见 [actions-and-animation.md](actions-and-animation.md) §3。
 
 白底原图怎么变成透明 webp 由你自己定——去背、缩放、压码用什么工具都行。
 仓库只收最终产物，也不收原图。
@@ -20,13 +20,37 @@
 去背工具只管去背景、不改构图，所以主体贴边、水印压在主体上这类问题要在入库前自己处理
 （水印落在白底上的会随背景一起去掉）。
 
-## 2. 目录与命名约定
+## 2. 目录、命名与配置契约
 
 - 一个动作 = 一个目录：`assets/actions/<动作名>/`；
-- 帧文件按**文件名字典序**即播放顺序，惯例是 `1.webp`、`2.webp`…；帧数 ≥10 时请零填充；
-- 必须有同名配置 `<动作名>.json`（`desc` / `tick_counts` / `frame_ratios` / `loop`，可选 `breath`）；
+- 帧文件按**文件名字典序**即播放顺序，惯例是 `1.webp`、`2.webp`…；帧数 ≥10 时请零填充
+  （否则 `10.webp` 会排在 `2.webp` 前面）；
+- 必须有配置 `<动作名>.json`，**文件名与目录同名**，否则整个动作不加载；
 - 动作名与素材目录名**不一定相同**：`walk` 用 `walk_left` / `walk_right`，`drive` 用 `driving_left` / `driving_right`，
   `fade_in` / `fade_out` 完全没有素材。
+
+```json
+{
+  "desc": "坐下动画",
+  "tick_counts": 60,
+  "frame_ratios": [0.9, 0.1],
+  "loop": true,
+  "breath": {"amplitude": 2, "scale_x": 1.0, "scale_y": 1.02, "period_ticks": 60},
+  "note": "自由备注"
+}
+```
+
+| 字段 | 要求 | 说明 |
+|---|---|---|
+| `desc` | 字符串 | 人读描述，代码不读 |
+| `tick_counts` | 正整数（默认 30） | 一个循环的总 tick 数；一个 tick = `round(1000 / PET_FPS)` ms（默认 15 FPS → 67ms） |
+| `frame_ratios` | 与帧数等长的正数数组，和 = 1.0 | 每帧占比，按文件名序对应；缺省为等分 |
+| `loop` | 布尔（默认 `true`） | 是否循环；动作的 `duration` 参数**只对循环动画生效** |
+| `breath` | 可选对象 | `amplitude` 0~4px、`scale_x` / `scale_y` 0.5~2.0、`period_ticks` 0~900 |
+| `note` | 字符串 | 自由备注，代码不读 |
+
+上表是**契约**：写成别的样子不会报错，而会被运行期容错悄悄改掉（等分、归一化、夹紧、跳过），
+具体后果见 [actions-and-animation.md](actions-and-animation.md) §3。
 
 当前素材规模（抽样）：24 个动作目录、24 个 json、48 个 webp 帧（全部 512×512）；
 多数动作 1~2 帧，`stretch` 3 帧、`rotate` 5 帧、`fishing` / `shake_arms` 8 帧。
@@ -36,13 +60,12 @@
 
 1. **素材是否符合动作语义**：新动作要先想清楚它属于移动 / 驻留 / 显隐（决定实现方式），
    以及是否需要时长参数（需要就进 `_DURATION_ACTION_DEFS`）。
-2. **规格与帧序**：512×512 透明 webp，文件名的字典序就是播放顺序；
-   `frame_ratios` 与帧数对不上会被丢弃改等分、总和不为 1 会被归一化（都不报错，只打 warning）；
-   `tick_counts` 太小会被抬到帧数。
+2. **规格与配置**：对照 §1 的规格与 §2 的字段契约逐项核对（尺寸、透明边距、帧序、字段取值）。
+   写偏了不会报错，只会被运行期容错悄悄改成等分 / 归一化 / 夹紧。
 3. **构图**：素材在窗口里按 `PET_WIDTH × PET_HEIGHT`（默认 125×125）等比拉伸绘制，
    原图留白过多会让角色显小；建议参照现有素材，主体四周留出相近边距。
 4. **注册动作**：在 `pet/action/registry.py` 注册，否则模型输出的动作名会被丢弃；
-   可选再挂特效（`_ACTION_PARTICLES`）、消耗（`ACTION_VITALS_DELTA`）、产出（`outcome.register`）。
+   再按需挂特效、消耗、产出，遗漏后果见 [actions-and-animation.md](actions-and-animation.md) §5。
 5. **跑测试与文档**：`python -m pytest` + `python scripts/gen_docs.py`；
    粒子/动作相关的用例在 `tests/test_particles.py`、`tests/test_action_*.py`。
 
@@ -50,15 +73,14 @@
 
 | 现象 | 原因与处理 |
 |---|---|
-| 新动作不播 | 三种可能：缺 json / 目录里没有图 / 没在 registry 注册（前两种队列打 warning 后跳过） |
-| 改了素材没生效 | 帧动画配置有缓存且无失效入口，**重启**应用 |
+| 新动作不播 | 缺 json / 目录里没有图 / 没在 registry 注册，三种原因各自的后果见 [actions-and-animation.md](actions-and-animation.md) §5 |
+| 改了素材没生效 | 帧动画配置有缓存且无失效入口，**重启**应用（缓存行为见 [actions-and-animation.md](actions-and-animation.md) §3） |
 | 角色被裁掉一角 | 检查原图主体是否贴边；重新生成或先补边距 |
 | 成品里残留水印 | 水印压在主体上会保留，落在白底上的才随背景去掉，必要时手动修图 |
 | 原图要不要提交 | 不要：仓库只提交压缩后的 webp 与 json（`.gitignore` 也不跟踪原图目录） |
 
 ## 5. 不变量
 
-- **帧序依赖文件名**：改名等于改播放顺序；零填充是硬性要求。
-- **json 必须与目录同名**，否则整个动作不加载。
-- **webp 是唯一被接受的正式格式**（png/jpg/bmp 代码也认，但仓库约定只用 webp）。
+- **帧序与配置同名是硬要求**：改名等于改播放顺序；json 文件名与目录不一致时整个动作不加载（见 §2）。
+- **webp 是仓库唯一的正式格式**（png/jpg/bmp 代码也认，但仓库约定只用 webp）。
 - 素材与代码是**成对**的：注册了动作却没有素材 → 该动作永远播不出来；反之素材不会被自动发现。

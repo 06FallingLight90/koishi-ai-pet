@@ -8,7 +8,7 @@
 | 建立整体心智模型：线程怎么跑、一次决策经过什么 | [architecture.md](architecture.md) |
 | 查某个配置项的类型/默认值/是否需重启 | [reference/config.md](reference/config.md) |
 | 查动作、工具、粒子特效、提示词块的清单 | [reference/](reference/) |
-| 搞懂 system prompt 是怎么拼出来的 | [architecture.md](architecture.md) §5 + [reference/prompt-blocks.md](reference/prompt-blocks.md) |
+| 搞懂 system prompt 是怎么拼出来的 | [subsystems/context-and-prompts.md](subsystems/context-and-prompts.md) + [reference/prompt-blocks.md](reference/prompt-blocks.md) |
 | 给桌宠加一项工具能力 | [tool-development.md](tool-development.md) |
 | 深入某一子系统（记忆、数值、动作、提示词、素材） | [subsystems/](subsystems/) |
 | 参与开发：环境、测试、提交、PR | [../CONTRIBUTING.md](../CONTRIBUTING.md) |
@@ -20,27 +20,36 @@
 
 ## 文档地图
 
-| 文件 | 类型 | 内容 | 维护方式 |
-|---|---|---|---|
-| [architecture.md](architecture.md) | 手写 | 分层与线程模型、启动链路、数据流、状态机、模块职责、红线与常见改动入口 | 改架构时人工更新 |
-| [glossary.md](glossary.md) | 手写 | 项目专有术语表 | 新增术语时人工补充 |
-| [tool-development.md](tool-development.md) | 手写 | 工具开发：目录约定、`register()` 模板、参数与返回值约定、`TOOL_CTX` 能力、`aside`、启用方式 | 改工具约定时人工更新 |
-| [reference/config.md](reference/config.md) | 生成 | 配置项全量（按设置页签分组）+ 字段含义 | `pet/config.py` 的 `_KEY_META` |
-| [reference/actions.md](reference/actions.md) | 生成 | 动作表：分类、参数、示例、时长范围 | `pet/action/registry.py` |
-| [reference/tools.md](reference/tools.md) | 生成 | 工具分组、方法、参数 | `pet/tools/**/__init__.py` 与 `pet/tools/registry.py` |
-| [reference/effects.md](reference/effects.md) | 生成 | 粒子特效名、生成函数、默认位置 | `pet/ui/particle.py` 的 `_SPAWNERS` |
-| [reference/prompt-blocks.md](reference/prompt-blocks.md) | 生成 | 提示词块、感知段/任务段组合、合法组合白名单 | `pet/brain/prompts.py` |
-| [reference/modules.md](reference/modules.md) | 生成 | 每个模块的一句话职责 | 模块 docstring |
-| [subsystems/context-and-prompts.md](subsystems/context-and-prompts.md) | 手写 | 上下文与提示词组装、三条任务的差异、动态块生命周期 | 改提示词结构时人工更新 |
-| [subsystems/memory.md](subsystems/memory.md) | 手写 | 记忆数据模型、写入与召回、维护与容量、坑 | 改记忆策略时人工更新 |
-| [subsystems/vitals-and-mood.md](subsystems/vitals-and-mood.md) | 手写 | 数值来源、衰减、阈值信号、到提示词的映射 | 改数值手感时人工更新 |
-| [subsystems/actions-and-animation.md](subsystems/actions-and-animation.md) | 手写 | 动作链路、队列与超时、帧动画、粒子 | 改动作系统时人工更新 |
-| [subsystems/assets-pipeline.md](subsystems/assets-pipeline.md) | 手写 | 素材规格、目录与命名约定、入库检查清单 | 改素材规格或流程时人工更新 |
-| [operations/release.md](operations/release.md) | 手写 | 版本与 tag、更新脚本行为、发布检查清单、变更记录 | 改发布流程时人工更新 |
-| [operations/troubleshooting.md](operations/troubleshooting.md) | 手写 | 现象对照表、诊断命令、上报要带什么 | 遇到新坑时补充 |
-| [decisions/](decisions/README.md) | 手写 | 设计决策记录（ADR），索引见该目录的 README | 做出取舍时新增一条 |
-| [../CHANGELOG.md](../CHANGELOG.md) | 生成 | 按版本分组的变更记录 | `python scripts/gen_changelog.py` |
-| [../CONTRIBUTING.md](../CONTRIBUTING.md) | 手写 | 开发流程、测试、提交与 PR 规范 | 流程变化时人工更新 |
+| 文件 | 角色 | 类型 | 内容 | 维护方式 |
+|---|---|---|---|---|
+| [architecture.md](architecture.md) | 架构解释 | 手写 | 分层与线程模型、启动链路、数据流、状态机、模块职责、红线与常见改动入口 | 改架构时人工更新 |
+| [glossary.md](glossary.md) | 事实参考 | 手写 | 项目专有术语表 | 新增术语时人工补充 |
+| [tool-development.md](tool-development.md) | 操作指南 | 手写 | 工具开发：目录约定、`register()` 模板、参数与返回值约定、`TOOL_CTX` 能力、`aside`、启用方式 | 改工具约定时人工更新 |
+| [reference/config.md](reference/config.md) | 事实参考 | 生成 | 配置项全量（按设置页签分组）+ 字段含义 | `pet/config.py` 的 `_KEY_META` |
+| [reference/actions.md](reference/actions.md) | 事实参考 | 生成 | 动作表：分类、参数、示例、时长范围 | `pet/action/registry.py` |
+| [reference/tools.md](reference/tools.md) | 事实参考 | 生成 | 工具分组、方法、参数 | `pet/tools/**/__init__.py` 与 `pet/tools/registry.py` |
+| [reference/effects.md](reference/effects.md) | 事实参考 | 生成 | 粒子特效名、生成函数、默认位置 | `pet/ui/particle.py` 的 `_SPAWNERS` |
+| [reference/prompt-blocks.md](reference/prompt-blocks.md) | 事实参考 | 生成 | 提示词块、感知段/任务段组合、合法组合白名单 | `pet/brain/prompts.py` |
+| [reference/modules.md](reference/modules.md) | 事实参考 | 生成 | 每个模块的一句话职责 | 模块 docstring |
+| [subsystems/context-and-prompts.md](subsystems/context-and-prompts.md) | 架构解释 | 手写 | 上下文与提示词组装、三条任务的差异、动态块生命周期 | 改提示词结构时人工更新 |
+| [subsystems/memory.md](subsystems/memory.md) | 架构解释 | 手写 | 记忆数据模型、写入与召回、维护与容量、坑 | 改记忆策略时人工更新 |
+| [subsystems/vitals-and-mood.md](subsystems/vitals-and-mood.md) | 架构解释 | 手写 | 数值来源、衰减、阈值信号、到提示词的映射 | 改数值手感时人工更新 |
+| [subsystems/actions-and-animation.md](subsystems/actions-and-animation.md) | 架构解释 | 手写 | 动作链路、队列与超时、帧动画的加载与运行、粒子 | 改动作系统时人工更新 |
+| [subsystems/assets-pipeline.md](subsystems/assets-pipeline.md) | 事实参考 | 手写 | 素材规格、目录与命名、配置字段契约、入库检查清单 | 改素材规格或流程时人工更新 |
+| [operations/release.md](operations/release.md) | 操作指南 | 手写 | 版本与 tag、更新脚本行为、发布检查清单、变更记录 | 改发布流程时人工更新 |
+| [operations/troubleshooting.md](operations/troubleshooting.md) | 操作指南 | 手写 | 现象对照表、诊断命令、上报要带什么 | 遇到新坑时补充 |
+| [decisions/](decisions/README.md) | 决策记录 | 手写 | 设计决策记录（ADR），索引见该目录的 README | 做出取舍时新增一条 |
+| [../CHANGELOG.md](../CHANGELOG.md) | 事实参考 | 生成 | 按版本分组的变更记录 | `python scripts/gen_changelog.py` |
+| [../CONTRIBUTING.md](../CONTRIBUTING.md) | 操作指南 | 手写 | 开发流程、测试、提交与 PR 规范 | 流程变化时人工更新 |
+
+**角色边界**（防止同一件事在多处各写一遍）：
+
+- **架构解释**回答「是什么 / 为什么这样切分」，只保留能建立心智模型的那一层，细节一律链接出去；
+- **操作指南**承载可执行步骤（命令、检查清单、排错流程），面向「我要做某件事」；
+- **事实参考**承载会随代码变化的清单与字段（默认值、字段表、特效名），尽量由脚本生成；
+- **决策记录**只写取舍的理由与代价，不复述做法。
+
+复述别处的细节时，只保留「结论 + 链接」，权威定义放回上面对应的那一类。
 
 ## 文档如何更新
 

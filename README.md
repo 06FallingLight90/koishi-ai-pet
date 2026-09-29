@@ -40,9 +40,13 @@ KoishiAI/
 
 ## 文档
 
+- **完整文档索引**（按目的选路径、文档地图、更新方式）：[docs/README.md](docs/README.md)
 - 架构总览（分层、线程模型、数据流、红线与常见改动入口）：[docs/architecture.md](docs/architecture.md)
+- 子系统手册（记忆、生理与心理数值、动作动画、上下文与提示词、素材规格）：[docs/subsystems/](docs/subsystems/)
+- 运维手册（发版与更新脚本行为、问题排查）：[docs/operations/](docs/operations/)
+- 设计决策记录（「为什么这么做」）：[docs/decisions/](docs/decisions/)
 - 术语表（vitals / mood / needs / outcome…）：[docs/glossary.md](docs/glossary.md)
-- 参考表（配置项、动作、工具、粒子特效、提示词块、模块清单）：[docs/README.md](docs/README.md)
+- 参考表（配置项、动作、工具、粒子特效、提示词块、模块清单）：[docs/reference/](docs/reference/)
 - 工具开发指南（目录约定、`register()` 模板、参数与返回值、`TOOL_CTX`）：[docs/tool-development.md](docs/tool-development.md)
 - 贡献指南（环境、测试、提交与 PR 规范）：[CONTRIBUTING.md](CONTRIBUTING.md)
 

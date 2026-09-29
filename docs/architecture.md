@@ -130,22 +130,17 @@ system prompt 由三段拼起来：
 1. **静态块**：`pet/brain/prompts.py` 的 `build_system_prompt(mode, task)`
    —— 身份、独立生活设定、输入可信度、人格、称呼、表达底线、记忆格式、感知段（含动作表）、任务段。
 2. **运行时块**：`context_builder._build_system()` 生成后替换 `<<FEELING>>` 锚点
-   —— `[你现在的状态]`（数值翻译成感受 + 求关注提示）、`[你惦记着的事]`（未满足需求 + 忽然想起来的旧事）、
-   `[最近发生了什么]`（近期事件）。
+   —— `[你现在的状态]`、`[你惦记着的事]`、`[最近发生了什么]`。
 3. **记忆检索**：`[你对用户的记忆]`，由 `pet/brain/memory.py` 的召回策略给出。
 
-`mode`（`autonomous_vision` / `autonomous_non_vision` / `chat_vision` / `chat_non_vision` / `interact`）决定感知段，
-`task`（`autonomous` / `chat` / `interact`）决定任务段；合法组合是白名单，写错直接抛 `ValueError`
-（见 [reference/prompt-blocks.md](reference/prompt-blocks.md)）。
+`mode` 决定感知段、`task` 决定任务段；合法组合是白名单，写错直接抛 `ValueError`。
 
-几个有意的取舍（改提示词前先看一眼）：
-
-- **system 段尽量稳定，变动的东西放 user 段**：当前时间、窗口内容、用户消息都进 user prompt，
-  这样 system 前缀可以命中 prompt 缓存（`LLM_CACHE_PROMPT`）。
-- **数值不直接进提示词**：数值先被翻译成自然语言感受（`_build_feeling`），档位与阈值在代码里有明确对应关系。
-- **「该怎么做」集中在一处**：需求对应的做法只写在「你惦记着的事」章节（`_NEED_HINTS`），
-  感受描述里不再重复祈使句，避免两处引导互相打架。
-- **即时交互不注入需求**：`interact` 是对单一事件的反射，注入长上下文只会让台词跑偏。
+块的顺序、每条任务的差异、动态块的生命周期与拼装取舍见
+[subsystems/context-and-prompts.md](subsystems/context-and-prompts.md)；
+块的机械清单见 [reference/prompt-blocks.md](reference/prompt-blocks.md)；
+数值如何被译成感受与需求阈值见 [subsystems/vitals-and-mood.md](subsystems/vitals-and-mood.md) §4。
+「为什么这么切分」（system 稳定换 prompt 缓存、数值不直接进提示词、做法只写一处、交互不注入需求）
+的理由见 [decisions/](decisions/) 的 0001 / 0003 / 0004。
 
 ## 6. 三条任务路径
 

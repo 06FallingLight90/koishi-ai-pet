@@ -15,6 +15,7 @@
 import argparse
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -130,7 +131,14 @@ def render(since: str, line_cap: int) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+def _force_utf8_stdio() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
+
 def main(argv: list[str] | None = None) -> int:
+    _force_utf8_stdio()
     parser = argparse.ArgumentParser(description="从 git 历史生成 CHANGELOG.md")
     parser.add_argument("--since", default=DEFAULT_SINCE, help=f"起点 tag（默认 {DEFAULT_SINCE}）")
     parser.add_argument("--line-cap", type=int, default=DEFAULT_LINE_CAP,

@@ -821,7 +821,14 @@ def render_all() -> dict[Path, str]:
     }
 
 
+def _force_utf8_stdio() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
+
 def main(argv: list[str] | None = None) -> int:
+    _force_utf8_stdio()
     parser = argparse.ArgumentParser(description="生成 docs/reference/*.md")
     parser.add_argument("--check", action="store_true",
                         help="只校验文档是否与代码一致，不写文件（不一致退出码 1）")

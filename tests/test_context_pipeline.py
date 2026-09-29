@@ -175,3 +175,44 @@ class TestEvictContextNegativeBaseLimit:
         ]
         assert remaining_normal == []
         assert len(brain._pending_summary_queue) == 8
+
+
+class TestInjectionCoversWholePool:
+    """每轮注入的条数上限要覆盖池子的常态上界，否则池里"多出来的"那几条
+    会被条数裁剪当轮排除、又够不上淘汰，形成"选不进也进不了摘要"的缺口。"""
+
+    def test_pool_ceiling_is_eviction_soft_limit(self, monkeypatch):
+        monkeypatch.setattr(config, "CONTEXT_HISTORY_ENTRIES", 5)
+        brain = _brain([])
+        assert brain._MAX_POOL_ENTRIES == 5 + BrainMixin._EVICT_BATCH_SIZE
+
+    def test_whole_pool_is_injected_in_normal_regime(self, monkeypatch):
+        """摘要与工具调用不挤占配额时，池子不会超过上界，池内条目应全部入选本轮。"""
+        monkeypatch.setattr(config, "CONTEXT_HISTORY_ENTRIES", 5)
+        brain = _brain([])
+        for i in range(20):
+            brain.add_context(role="assistant", content=f"消息{i}")
+
+        # 先确认确实处在震荡区间（池子 > _MAX_ENTRIES），否则这条断言没有意义
+        assert brain._MAX_ENTRIES < brain.context_count() <= brain._MAX_POOL_ENTRIES
+        messages = brain.get_multi_turn_messages(max_entries=brain._MAX_POOL_ENTRIES)
+        assert len(messages) == brain.context_count()
+
+    def test_builders_request_whole_pool(self, monkeypatch):
+        """两个多轮构建入口传的必须是池子上界，而不是 CONTEXT_HISTORY_ENTRIES。"""
+        monkeypatch.setattr(config, "CONTEXT_HISTORY_ENTRIES", 5)
+        brain = _brain([])
+        seen: list[int] = []
+
+        def spy(*args, **kwargs):
+            seen.append(kwargs["max_entries"])
+            return []
+
+        monkeypatch.setattr(brain, "get_multi_turn_messages", spy)
+
+        builder = object.__new__(ContextBuilder)
+        builder._brain = brain
+        builder._build_multi_turn_autonomous("系统提示", "", False, None)
+        builder._build_multi_turn_chat("系统提示", "你好", "", False, None)
+
+        assert seen == [5 + BrainMixin._EVICT_BATCH_SIZE] * 2

@@ -32,6 +32,20 @@ class BrainMixin:
         return config.CONTEXT_HISTORY_ENTRIES
 
     @property
+    def _MAX_POOL_ENTRIES(self) -> int:
+        """注入时该取多少条：池子在常态下的上界，即 `_evict_context` 的批量淘汰软上限。
+
+        传这个值而不是 `CONTEXT_HISTORY_ENTRIES`，池内条目才不会被一个比池子容量更小的数字
+        每轮排除——旧实现里池子允许长到 `_MAX_ENTRIES + _EVICT_BATCH_SIZE`，注入却只取
+        `_MAX_ENTRIES`，多出来的那几条既选不进本轮、又够不上淘汰，要等下一次批量淘汰才进摘要队列。
+
+        注意这不是池子的硬上界：工具调用没有条数配额，最近 `CONTEXT_HALF_LIFE_S` 内的工具调用
+        超过 `_MAX_ENTRIES` 减去摘要数时池子会突破它，此时 `get_multi_turn_messages` 的条数裁剪
+        仍会兜底（丢掉最旧的若干条）。
+        """
+        return self._MAX_ENTRIES + self._EVICT_BATCH_SIZE
+
+    @property
     def _MAX_HISTORY_SUMMARIES(self) -> int:
         return max(2, int(config.CONTEXT_HISTORY_ENTRIES * 0.2))
 

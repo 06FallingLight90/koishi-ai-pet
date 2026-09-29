@@ -12,10 +12,10 @@ logger = logging.getLogger(__name__)
 # hidden: False = 在 UI 中显示, True = 高级设置（仅 settings.json）
 _KEY_META = {
     "BRAIN":                     {"type": "str",      "default": "local",       "category": "connection", "needs_restart": False, "hidden": False, "description": "LLM 调用模式",                           "enum": ["local", "api", "ollama"]},
-    "LLM_MODEL":                 {"type": "str",      "default": "",            "category": "connection", "needs_restart": False, "hidden": False, "description": "首选 LLM 模型名称",                       "placeholder": "mimo-v2.5"},
+    "LLM_MODEL":                 {"type": "str",      "default": "",            "category": "connection", "needs_restart": False, "hidden": False, "description": "首选 LLM 模型名称",                       "placeholder": "mimo-v2.6-flash"},
     "LLM_KEY":                   {"type": "str",      "default": "",            "category": "connection", "needs_restart": False, "hidden": False, "description": "首选 API Key"},
     "LLM_URL":                   {"type": "str",      "default": "",            "category": "connection", "needs_restart": False, "hidden": False, "description": "首选 API 地址(需兼容 OpenAI 格式)"},
-    "LLM_MODEL_ALT":             {"type": "str",      "default": "",            "category": "connection", "needs_restart": False, "hidden": False, "description": "备选 LLM 模型名称，留空则沿用首选",         "placeholder": "mimo-v2.5"},
+    "LLM_MODEL_ALT":             {"type": "str",      "default": "",            "category": "connection", "needs_restart": False, "hidden": False, "description": "备选 LLM 模型名称，留空则沿用首选",         "placeholder": "mimo-v2.6-flash"},
     "LLM_KEY_ALT":               {"type": "str",      "default": "",            "category": "connection", "needs_restart": False, "hidden": False, "description": "备选 API Key，留空则沿用首选"},
     "LLM_URL_ALT":               {"type": "str",      "default": "",            "category": "connection", "needs_restart": False, "hidden": False, "description": "备选 API 地址(需兼容 OpenAI 格式)，留空则沿用首选"},
     "LLM_ACTIVE_PROFILE":        {"type": "str",      "default": "primary",     "category": "connection", "needs_restart": False, "hidden": False, "description": "当前启用的模型方案",                     "enum": ["primary", "alternative"]},

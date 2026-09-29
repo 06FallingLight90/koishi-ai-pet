@@ -1,10 +1,11 @@
 # 变更记录
 
-本文件由 [`scripts/gen_changelog.py`](scripts/gen_changelog.py) 从 git 历史生成，
-按 [Conventional Commits](CONTRIBUTING.md) 前缀分组；
+本文件由 `scripts/gen_changelog.py` 从 git 历史生成（脚本只在源码仓库里），
+按 [Conventional Commits](https://github.com/Koishi007/koishi-ai-pet/blob/master/CONTRIBUTING.md) 前缀分组；
 起点 tag 为 `v1.5.0`，更早的历史没有规范化的提交信息、未回溯（见 GitHub Releases）。
 
-发布前刷新一次：`python scripts/gen_changelog.py`，流程见 [docs/operations/release.md](docs/operations/release.md)。
+发布前刷新一次：`python scripts/gen_changelog.py`，流程见
+[docs/operations/release.md](https://github.com/Koishi007/koishi-ai-pet/blob/master/docs/operations/release.md)。
 
 ## 未发布
 
@@ -33,6 +34,12 @@
 
 **样式**
 - **idle**: 待机呼吸幅度与节奏对齐思考动画（fa489e5）
+
+**文档**
+- 发布包内文档改用在线链接（95600fe）
+- 收敛重复内容并标注文档角色（0f2a8c9）
+- 建立文档工程并补充分层设计标准（e9f67b3）
+- README 同步代码现状，mimo 推荐模型更新至 v2.6-flash（0618568）
 
 **测试**
 - **context_notes**: 消除 TestNeedsNote 对运行时段的依赖（80eba6b）
@@ -147,9 +154,8 @@
 - Support multiple emotions and remove emotion-linked particles（e993082）
 - Update README.md（b10a835）
 - Deduplicate self-feeding context via system path only（483be30）
-- Update pyproject.toml（fb82ad4）
 
-## v1.5.0 — 2026-08-20
+## v1.5.0 — 2026-08-21
 
 **新功能**
 - unify game summary perspective; remove panel auto-hide; end-of-game guidance（38b7120）
@@ -198,6 +204,7 @@
 - 精简 food__spawn 工具描述（cd5ecb7）
 
 **其他**
+- Update pyproject.toml（fb82ad4）
 - Fix IndentationError in game play summary（d33456d）
 - 调整aside的概念（1cb68bc）
 - Rename tool call speech param to aside（84d1999）

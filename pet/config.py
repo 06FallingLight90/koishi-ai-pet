@@ -1,3 +1,9 @@
+"""配置系统：`_KEY_META` 是所有配置项的唯一真源，`settings.json` 存用户覆盖（路径见 `pet/settings.py`）。
+
+`category` 用来判断改配置的副作用（connection 重建 LLM 客户端、behavior 刷新调度器），
+和设置界面的页签归属不是一回事。参考表由 `scripts/gen_docs.py` 生成为 `docs/reference/config.md`。
+"""
+
 import json
 import logging
 import os

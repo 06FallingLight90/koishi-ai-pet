@@ -203,7 +203,11 @@ AGENTS.md
 
 /.vscode
 
-/docs
+# docs/ 下的历史本地草稿继续忽略（只忽略这几项，其余文档默认纳入版本管理）
+/docs/plan.md
+/docs/ChatHistoryWindow_*.md
+/docs/iat_ws_python3.py
+/docs/superpowers/
 
 /.superpowers
 

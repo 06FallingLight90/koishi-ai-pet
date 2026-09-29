@@ -2,7 +2,7 @@ name: tests
 
 on:
   push:
-    branches: [dev, main]
+    branches: [dev, master]
   pull_request:
 
 jobs:
@@ -28,6 +28,10 @@ jobs:
 
       - name: Install dependencies
         run: pip install -e ".[dev]"
+
+      # 参考文档由代码生成，改代码没重新生成文档时这里会给出明确提示
+      - name: Docs up to date
+        run: python scripts/gen_docs.py --check
 
       - name: Run tests
         run: python -m pytest

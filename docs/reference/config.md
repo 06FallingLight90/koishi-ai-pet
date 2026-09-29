@@ -43,8 +43,7 @@
 |---|---|---|---|---|
 | `SCHEDULER_MID_MS` | int | 300000 |  | 自主决策间隔(毫秒) |
 | `SCHEDULER_AUTO_START_MID` | bool | true |  | 自动启动 mid_tick(自主决策) |
-| `CONTEXT_MAX_ENTRIES` | int | 30 |  | 备选上下文数量上限 |
-| `CONTEXT_HISTORY_ENTRIES` | int | 15 |  | 每轮注入上下文数量上限 |
+| `CONTEXT_HISTORY_ENTRIES` | int | 15 |  | 每轮注入上下文数量上限(同时也是候选池容量) |
 | `VISION_ENABLED` | bool | false |  | 启用视觉理解(需多模态模型支持) |
 | `VISION_SCALE` | float | 0.7 |  | 截图缩放比例(0.1~1.0) |
 | `SCREENSHOT_FORMAT` | str | `"jpeg"` |  | 截图编码格式（可选：jpeg / png） |
@@ -106,7 +105,6 @@
 | `ATTENTION_THRESHOLDS` | str_list | ["10", "20", "30"] |  |  | 连续未互动轮次阈值，达到后向桌宠注入求关注提示（如10/20/30轮） |
 | `BRAIN_STUCK_TIMEOUT` | int | 300 | 是 |  | 脑线程无进展超时(秒)：autonomous/interacting 状态下持续无输出、无工具进展超过该时长才判定挂死（进行中的游戏对局不计时） |
 | `CONTEXT_HALF_LIFE_S` | int | 1800 | 是 |  | 上下文评分半衰期(秒) |
-| `CONTEXT_MAX_SUMMARIES` | int | 5 | 是 |  | 上下文最大摘要数 |
 | `CONTEXT_PERSIST_ENABLED` | bool | true | 是 |  | 启用上下文持久化 |
 | `CONTEXT_TOKEN_BUDGET` | int | 8192 | 是 |  | 上下文token预算上限 |
 | `FOOD_ENABLED` | bool | true |  | 是 | 觅食总开关（桌宠自主生成食物并吃掉），修改后需重启生效 |
@@ -156,4 +154,4 @@
 - `hidden`：`true` 表示不在界面显示，只能直接编辑 `settings.json`
 - `enum` / `minimum` / `maximum`：取值约束，会写进 `settings-schema.json`
 
-共 92 项（其中 38 项未在界面列出）。
+共 90 项（其中 37 项未在界面列出）。

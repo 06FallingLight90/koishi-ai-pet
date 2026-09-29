@@ -109,11 +109,12 @@ def render(since: str, line_cap: int) -> str:
     lines = [
         "# 变更记录",
         "",
-        "本文件由 [`scripts/gen_changelog.py`](scripts/gen_changelog.py) 从 git 历史生成，",
-        "按 [Conventional Commits](CONTRIBUTING.md) 前缀分组；",
+        "本文件由 `scripts/gen_changelog.py` 从 git 历史生成（脚本只在源码仓库里），",
+        "按 [Conventional Commits](https://github.com/Koishi007/koishi-ai-pet/blob/master/CONTRIBUTING.md) 前缀分组；",
         f"起点 tag 为 `{since}`，更早的历史没有规范化的提交信息、未回溯（见 GitHub Releases）。",
         "",
-        "发布前刷新一次：`python scripts/gen_changelog.py`，流程见 [docs/operations/release.md](docs/operations/release.md)。",
+        "发布前刷新一次：`python scripts/gen_changelog.py`，流程见",
+        "[docs/operations/release.md](https://github.com/Koishi007/koishi-ai-pet/blob/master/docs/operations/release.md)。",
         "",
     ]
     lines += _render_section("未发布", _commits(f"{newest}..HEAD"), line_cap)

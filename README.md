@@ -40,15 +40,10 @@ KoishiAI/
 
 ## 文档
 
-- **完整文档索引**（按目的选路径、文档地图、更新方式）：[docs/README.md](docs/README.md)
-- 架构总览（分层、线程模型、数据流、红线与常见改动入口）：[docs/architecture.md](docs/architecture.md)
-- 子系统手册（记忆、生理与心理数值、动作动画、上下文与提示词、素材规格）：[docs/subsystems/](docs/subsystems/)
-- 运维手册（发版与更新脚本行为、问题排查）：[docs/operations/](docs/operations/)
-- 设计决策记录（「为什么这么做」）：[docs/decisions/](docs/decisions/)
-- 术语表（vitals / mood / needs / outcome…）：[docs/glossary.md](docs/glossary.md)
-- 参考表（配置项、动作、工具、粒子特效、提示词块、模块清单）：[docs/reference/](docs/reference/)
-- 工具开发指南（目录约定、`register()` 模板、参数与返回值、`TOOL_CTX`）：[docs/tool-development.md](docs/tool-development.md)
-- 贡献指南（环境、测试、提交与 PR 规范）：[CONTRIBUTING.md](CONTRIBUTING.md)
+- 完整开发文档索引（按目的选路径、文档地图、架构与子系统、ADR、运维手册、术语表）：
+  [koishi-ai-pet · docs/README.md](https://github.com/Koishi007/koishi-ai-pet/blob/master/docs/README.md)
+  ——需要与本包版本严格对应时，在该页面切换到同版本的 tag
+- 按版本分组的变更记录：[CHANGELOG.md](CHANGELOG.md)（在包内）
 
 ## 快速开始
 
@@ -355,13 +350,6 @@ RAG 知识库，支持语义检索。可配置向量嵌入以启用语义搜索�
 | **开启/关闭鼠标穿透** | 开启后鼠标可穿透桌宠，不影响点击下方窗口 |
 | **设置** | 打开设置窗口 |
 | **退出** | 退出应用程序 |
-
-## 工具开发指南
-
-给桌宠加一项外部能力的完整流程（目录约定、`register()` 模板、参数与返回值约定、图片注入、
-`TOOL_CTX` 能力、`aside` 用法、启用方式与注意事项）见 **[docs/tool-development.md](docs/tool-development.md)**。
-
-现有工具的分组与方法清单见 [docs/reference/tools.md](docs/reference/tools.md)（生成物，随代码更新）。
 
 ## 许可
 

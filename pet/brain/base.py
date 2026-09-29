@@ -27,11 +27,9 @@ class BrainMixin:
 
     @property
     def _MAX_ENTRIES(self) -> int:
-        return config.CONTEXT_MAX_ENTRIES
-
-    @property
-    def _MAX_SUMMARIES(self) -> int:
-        return config.CONTEXT_MAX_SUMMARIES
+        # 候选池容量与每轮注入上限是同一个值：池内条目一定有机会入选本轮，
+        # 被淘汰的条目一定进摘要队列，不再存在"留在池里却永远选不进"的死区。
+        return config.CONTEXT_HISTORY_ENTRIES
 
     @property
     def _MAX_HISTORY_SUMMARIES(self) -> int:

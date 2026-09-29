@@ -696,7 +696,6 @@ class SettingsWindow(QWidget):
         sched_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         sched_form.addRow("自主行动间隔(ms):", self._line("SCHEDULER_MID_MS", "300000", QIntValidator(60000, 3600000)))
         sched_form.addRow("", self._check("SCHEDULER_AUTO_START_MID", "默认开启自动行动"))
-        sched_form.addRow("备选上下文数量上限:", self._line("CONTEXT_MAX_ENTRIES", "30", QIntValidator(10, 100)))
         sched_form.addRow("每轮注入上下文数量上限:", self._line("CONTEXT_HISTORY_ENTRIES", "15", QIntValidator(1, 50)))
         inner.addWidget(sched_group)
 

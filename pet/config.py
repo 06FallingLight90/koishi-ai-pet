@@ -99,9 +99,7 @@ _KEY_META = {
     "MEMORY_RERANK_WEIGHT_SIM":  {"type": "float",    "default": 0.7,            "category": "memory",   "needs_restart": False, "hidden": True,  "description": "重排序-语义相似度权重"},
     "MEMORY_RERANK_WEIGHT_IMP":  {"type": "float",    "default": 0.2,            "category": "memory",   "needs_restart": False, "hidden": True,  "description": "重排序-有效重要性权重"},
     "MEMORY_RERANK_WEIGHT_RECENCY": {"type": "float", "default": 0.1,           "category": "memory",   "needs_restart": False, "hidden": True,  "description": "重排序-时效性权重"},
-    "CONTEXT_MAX_ENTRIES":       {"type": "int",      "default": 30,             "category": "behavior", "needs_restart": False, "hidden": False, "description": "备选上下文数量上限"},
-    "CONTEXT_HISTORY_ENTRIES":   {"type": "int",      "default": 15,              "category": "behavior", "needs_restart": False, "hidden": False, "description": "每轮注入上下文数量上限"},
-    "CONTEXT_MAX_SUMMARIES":     {"type": "int",      "default": 5,              "category": "behavior", "needs_restart": False, "hidden": True,  "description": "上下文最大摘要数"},
+    "CONTEXT_HISTORY_ENTRIES":   {"type": "int",      "default": 15,              "category": "behavior", "needs_restart": False, "hidden": False, "description": "每轮注入上下文数量上限(同时也是候选池容量)"},
     "CONTEXT_HALF_LIFE_S":       {"type": "int",      "default": 1800,           "category": "behavior", "needs_restart": False, "hidden": True,  "description": "上下文评分半衰期(秒)"},
     "CONTEXT_TOKEN_BUDGET":      {"type": "int",      "default": 8192,           "category": "behavior", "needs_restart": False, "hidden": True,  "description": "上下文token预算上限"},
     

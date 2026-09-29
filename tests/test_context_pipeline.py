@@ -125,3 +125,31 @@ class TestMergeSystemHistory:
         builder = object.__new__(ContextBuilder)
         merged = builder._merge_system_history("系统提示", [{"role": "user", "content": "嗨"}])
         assert merged[0]["content"] == "系统提示"
+
+
+class TestPoolCapUnified:
+    """CONTEXT_MAX_ENTRIES 已合并进 CONTEXT_HISTORY_ENTRIES，不再是独立上限。"""
+
+    def test_max_entries_follows_history_entries_config(self, monkeypatch):
+        monkeypatch.setattr(config, "CONTEXT_HISTORY_ENTRIES", 5)
+        brain = _brain([])
+        assert brain._MAX_ENTRIES == 5
+
+    def test_pool_size_stays_bounded_by_history_entries(self, monkeypatch):
+        monkeypatch.setattr(config, "CONTEXT_HISTORY_ENTRIES", 5)
+        brain = _brain([])
+        for i in range(20):
+            brain.add_context(role="assistant", content=f"消息{i}")
+        # 池子在 CONTEXT_HISTORY_ENTRIES 到 CONTEXT_HISTORY_ENTRIES+_EVICT_BATCH_SIZE 之间震荡
+        # （见 spec §3），不会再无限增长到旧的 CONTEXT_MAX_ENTRIES=30。
+        # 断言直接对照配置值而非 brain._MAX_ENTRIES，避免用被测实现自证其行为。
+        assert brain.context_count() <= config.CONTEXT_HISTORY_ENTRIES + BrainMixin._EVICT_BATCH_SIZE
+
+    def test_orphan_config_keys_removed(self):
+        with pytest.raises(AttributeError):
+            config.CONTEXT_MAX_ENTRIES
+        with pytest.raises(AttributeError):
+            config.CONTEXT_MAX_SUMMARIES
+
+    def test_max_summaries_property_removed(self):
+        assert not hasattr(BrainMixin, "_MAX_SUMMARIES")

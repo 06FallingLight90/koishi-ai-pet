@@ -44,7 +44,7 @@
 
 | 状态 | 描述 |
 |---|---|
-| 仍在池内 | 一定会被 `get_multi_turn_messages` 尝试选入本轮；可能让它当轮缺席的有两种情况——① token 预算超限，② `_evict_context` 的批量淘汰软上限（见 §3）导致池子在 `_MAX_ENTRIES` 到 `_MAX_ENTRIES+6` 之间震荡，震荡期间最旧的最多 6 条会被条数裁剪当轮排除。两种情况条目都没有离开池子，下一轮条件允许时仍可能入选，且震荡区间必定会被下一次批量淘汰清空，**都是有界、自愈的，不是永久丢失** |
+| 仍在池内 | 一定会被 `get_multi_turn_messages` 选入本轮（注入的条数上限取池子的常态上界 `_MAX_ENTRIES + _EVICT_BATCH_SIZE`，见 §3 补记）。例外只有两种：① token 预算（`CONTEXT_TOKEN_BUDGET`）超限，② 工具调用密集、池子突破常态上界时条数裁剪的兜底。两种情况条目都没有离开池子，下一轮条件允许时仍可能入选，**都是有界、自愈的，不是永久丢失** |
 | 被池子淘汰 | 保证进入 `_pending_summary_queue`，之后被压成摘要重新回到池子 |
 
 不再存在"留在池子里但永远选不进任何一轮"的第三态——"当轮偶尔选不进、几轮内自愈"和"永远选不进"是两件不同的事，前者可接受，后者才是反逻辑的根源，本次要解决的是后者。
@@ -120,6 +120,31 @@ if len(normal_chats) > soft_limit:      # 只有超过 base_limit+6 才会触发
 "缺口无限期存在"变成了"缺口有界且很快自愈"，反逻辑的根源（永久不可见、没有摘要通道）被解决，
 只是没有做到缺口严格等于 0——而严格等于 0 本来就不是必要目标（见 §2 表格）。
 
+### §3 补记（Task 3）：把注入的条数上限提到池子常态上界，缺口清零
+
+上面"缺口收窄到最多 6 条、最多 6 轮自愈"只是把问题变小，没有清零。清零的落点在**调用方**：
+`context_builder.py` 的两处多轮构建入口原本传 `max_entries=config.CONTEXT_HISTORY_ENTRIES`（15），
+而池子允许长到 15+6=21——池子明明能装 21 条，注入却始终卡在 15，震荡区间里最旧的最多 6 条
+每轮都被排除、最多要等 6 轮才被下一次批量淘汰扫进摘要队列。改成传
+`BrainMixin._MAX_POOL_ENTRIES`（= `_MAX_ENTRIES + _EVICT_BATCH_SIZE`，本设计新增的只读属性）后，
+常态下池子不会超过这个上界，池内条目全部入选本轮，缺口清零。`get_multi_turn_messages` 内部
+一行未动（本节结论不变：那段裁剪逻辑留着当安全网）。
+
+**必须记住的细节**：`_MAX_ENTRIES + _EVICT_BATCH_SIZE` **不是池子的硬上界**，它是"普通对话"
+配额的软上限。`_evict_context` 里 `base_limit = max(0, _MAX_ENTRIES - len(summaries) - len(tool_calls))`，
+而工具调用（最近 `CONTEXT_HALF_LIFE_S` 内的 `[工具调用]` 条目）**没有独立条数配额**——实测连写
+25 条工具调用，池子就是 25 条，超过 21。所以准确表述是：
+
+| 条件 | 池子上界 | `get_multi_turn_messages` 的条数裁剪 |
+|---|---|---|
+| 摘要数 + 近期工具调用数 ≤ `_MAX_ENTRIES`（常态） | `_MAX_ENTRIES + _EVICT_BATCH_SIZE` | 数值上不可能触发，纯防御 |
+| 摘要数 + 近期工具调用数 > `_MAX_ENTRIES`（工具调用密集） | 无固定上界 | **仍在真实触发**，丢弃最旧的若干条 |
+
+第二行那种情况下的"当轮缺席"同样是有界的：工具调用条目过了 `CONTEXT_HALF_LIFE_S` 就整条消失
+（不进摘要队列），普通对话在配额被挤到 0 时会被全部淘汰进摘要队列（§4 修的正是这个），
+所以最坏是被压到工具调用变老的这 30 分钟，不是永久。要把它也清零就得给工具调用加条数配额，
+那是 §7 明确排除的调参范围，不在本次。
+
 ## §4 相邻修复：`_evict_context` 的负数切片风险
 
 `base_limit = self._MAX_ENTRIES - len(summaries) - len(tool_calls)`：如果"摘要保留数
@@ -144,13 +169,14 @@ if len(normal_chats) > soft_limit:      # 只有超过 base_limit+6 才会触发
 | 文件 | 改动 |
 |---|---|
 | `pet/config.py` | 删除 `CONTEXT_MAX_ENTRIES`、`CONTEXT_MAX_SUMMARIES` 两个 key |
-| `pet/brain/base.py` | `_MAX_ENTRIES` 改指向 `CONTEXT_HISTORY_ENTRIES`；删除 `_MAX_SUMMARIES` 属性；`_evict_context` 的 `base_limit` 加 `max(0, ...)`（`get_multi_turn_messages` 不改，见 §3） |
+| `pet/brain/base.py` | `_MAX_ENTRIES` 改指向 `CONTEXT_HISTORY_ENTRIES`；删除 `_MAX_SUMMARIES` 属性；`_evict_context` 的 `base_limit` 加 `max(0, ...)`；新增只读属性 `_MAX_POOL_ENTRIES`（`get_multi_turn_messages` 不改，见 §3） |
+| `pet/brain/context_builder.py` | 两处多轮构建入口的 `max_entries` 由 `CONTEXT_HISTORY_ENTRIES` 改为 `self._brain._MAX_POOL_ENTRIES`（见 §3 补记） |
 | `pet/ui/settings_window.py` | 删除"备选上下文数量上限"设置行 |
 | `tests/test_context_pipeline.py` | 见 §6 |
 
-不涉及 `pet/brain/behavior.py`（`_llm_summarize`/`_flush_pending_summaries` 逻辑不变）、
-`pet/brain/context_builder.py`（调用参数不变，只是 `CONTEXT_MAX_ENTRIES` 消失后 `CONTEXT_HISTORY_ENTRIES`
-的含义从"每轮注入上限"变成"注入上限 = 池子容量"，调用代码本身不用改）。
+不涉及 `pet/brain/behavior.py`（`_llm_summarize`/`_flush_pending_summaries` 逻辑不变）。
+`pet/brain/context_builder.py` 原判为"调用代码本身不用改"，被 §3 补记推翻：只把
+`CONTEXT_HISTORY_ENTRIES` 当注入上限仍会留下最多 6 条的缺口，两处调用要改传 `_MAX_POOL_ENTRIES`。
 
 ## §6 测试改动
 
@@ -162,6 +188,11 @@ if len(normal_chats) > soft_limit:      # 只有超过 base_limit+6 才会触发
 - **新增** 覆盖 §4 修复的测试：构造 "`summaries` 数 + 最近 `tool_calls` 数 > 统一上限" 的场景，
   断言 `_evict_context` 后普通对话被正确全部移入 `_pending_summary_queue`，而不是被负数切片
   错误保留。
+- **新增** 覆盖 §3 补记的测试：断言 `_MAX_POOL_ENTRIES == _MAX_ENTRIES + _EVICT_BATCH_SIZE`；
+  断言常态下（20 条普通对话跑一遍淘汰）池子不超过上界且 `get_multi_turn_messages` 能把池内条目
+  全部注入；用 monkeypatch 替换 `brain.get_multi_turn_messages` 做 spy，断言
+  `_build_multi_turn_autonomous` / `_build_multi_turn_chat` 两处传的 `max_entries` 是新上界
+  （而不是 `CONTEXT_HISTORY_ENTRIES`）。
 - 检查现有测试中是否有依赖 `CONTEXT_MAX_ENTRIES`/`CONTEXT_MAX_SUMMARIES` 默认值的断言
   （目前搜索确认没有，仅 `config.py`/`base.py`/`settings_window.py` 三处引用）。
 

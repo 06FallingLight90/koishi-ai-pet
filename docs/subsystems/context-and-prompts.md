@@ -30,12 +30,14 @@
 - 历史多轮由 `BrainMixin.get_multi_turn_messages` 装配，先按条数上限淘汰、再按 token 预算淘汰；
   历史里的 system 片段会被 `_merge_system_history` 并成一段 `[上下文备注]` 追加到 system 末尾，
   保持「一个 system + 若干 user/assistant」的干净结构。
-- **候选池与每轮注入共用同一个上限** `CONTEXT_HISTORY_ENTRIES`（默认 15）：它既是 `_context` 池子的容量
-  （`_evict_context()` 的超限淘汰依据），也是每轮注入的条数上限。池内条目每轮都有机会入选（只可能因
-  token 预算当轮缺席）；被淘汰的普通对话**必定**进 `_pending_summary_queue`，压成摘要后回到池子。
-  淘汰是批量触发的（攒够 `_EVICT_BATCH_SIZE = 6` 才裁一批），所以池子实际在 15～21 之间震荡，
-  震荡期那几条最旧的会当轮缺席，但下一批淘汰就会把它们扫进摘要队列——有界且自愈。
-  取这个不变式的原因见 [设计文档](../specs/2026-09-29-context-injection-pool-unify-design.md)。
+- **候选池与每轮注入是同一条上限**：`CONTEXT_HISTORY_ENTRIES`（默认 15）是 `_context` 池子的容量
+  （`_evict_context()` 的超限淘汰依据），而每轮注入的条数上限取池子的常态上界
+  `_MAX_POOL_ENTRIES = _MAX_ENTRIES + _EVICT_BATCH_SIZE`（默认 21）——淘汰是批量触发的
+  （攒够 6 条才裁一批），池子会在容量之上再多挂几条，注入上限必须跟着池子的真实上界走，
+  否则多出来的那几条每轮都被条数裁剪排除、又够不上淘汰。池内条目正常都会入选本轮
+  （例外只有 token 预算超限，以及工具调用挤占配额把池子顶到上界之外时的兜底）；
+  被淘汰的普通对话**必定**进 `_pending_summary_queue`，压成摘要后回到池子。
+  取这个不变式的原因见 [设计文档](../specs/2026-09-29-context-injection-pool-unify-design.md) §3。
 - 交互任务（`interact`）只发 system + user 两条，不带历史。
 
 ## 3. 动态块的生命周期

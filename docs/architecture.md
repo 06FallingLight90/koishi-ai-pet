@@ -320,6 +320,7 @@ LLM 客户端与重试管理、流式与非流式调用、两套输出解析、�
 | `pet/action/action.py`（47 处） | `gravity._vy` / `_clamp_pos()` / `_cached_effective_bottom` / `_standing_hwnd` 等——行走与 drive 直接读重力内部状态，是最大的一处耦合 |
 | `pet/app.py` | `agent._voice_session`、`agent.behavior._save_context()`、`window._quit_fn`、`tray._quit_fn` |
 | `pet/brain/behavior.py` | `executor._execute_one()`、`executor._normalize()`、`memory_store._db_path` |
+| `pet/brain/context_builder.py` | `brain._MAX_POOL_ENTRIES`：注入条数上限由池子的拥有者决定，只读派生值，不涉及可变状态 |
 | `pet/ui/debug_window.py` | `agent.behavior._context`、`_score_entry` |
 | `pet/ui/music_bubble.py` | `speech_bubble._speech_queue`、`_is_active` |
 | `pet/action/action_queue.py` | `gravity._tick()`：动作结束前手动跑一次重力，见 [0007](decisions/0007-action-timeout-settles.md) |

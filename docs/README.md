@@ -16,6 +16,7 @@
 | 排查问题（日志、崩溃报告在哪） | [operations/troubleshooting.md](operations/troubleshooting.md) |
 | 看懂 vitals / mood / needs / outcome 这些词 | [glossary.md](glossary.md) |
 | 知道某个设计「为什么这么做」 | [decisions/](decisions/) |
+| 看一次较大改动的设计取舍与实施计划 | [specs/](specs/) |
 | 看某个版本改了什么 | [../CHANGELOG.md](../CHANGELOG.md) |
 
 ## 文档地图
@@ -39,6 +40,8 @@
 | [operations/release.md](operations/release.md) | 操作指南 | 手写 | 版本与 tag、更新脚本行为、发布检查清单、变更记录 | 改发布流程时人工更新 |
 | [operations/troubleshooting.md](operations/troubleshooting.md) | 操作指南 | 手写 | 现象对照表、诊断命令、上报要带什么 | 遇到新坑时补充 |
 | [decisions/](decisions/README.md) | 决策记录 | 手写 | 设计决策记录（ADR），索引见该目录的 README | 做出取舍时新增一条 |
+| [specs/2026-09-29-context-injection-pool-unify-design.md](specs/2026-09-29-context-injection-pool-unify-design.md) | 设计文档 | 手写 | 候选池容量与每轮注入上限合并的根因、方案取舍、被否决的备选方案 | 动手前写，落地后补齐结论 |
+| [specs/2026-09-29-context-injection-pool-unify-plan.md](specs/2026-09-29-context-injection-pool-unify-plan.md) | 实施计划 | 手写 | 该改动拆成的任务、每步的命令与验收标准 | 执行时逐项勾选 |
 | [../CHANGELOG.md](../CHANGELOG.md) | 事实参考 | 生成 | 按版本分组的变更记录 | `python scripts/gen_changelog.py` |
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) | 操作指南 | 手写 | 开发流程、测试、提交与 PR 规范 | 流程变化时人工更新 |
 

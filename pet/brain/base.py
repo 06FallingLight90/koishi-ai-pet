@@ -27,11 +27,23 @@ class BrainMixin:
 
     @property
     def _MAX_ENTRIES(self) -> int:
-        return config.CONTEXT_MAX_ENTRIES
+        # 候选池容量与每轮注入上限是同一个值：池内条目一定有机会入选本轮，
+        # 被淘汰的条目一定进摘要队列，不再存在"留在池里却永远选不进"的死区。
+        return config.CONTEXT_HISTORY_ENTRIES
 
     @property
-    def _MAX_SUMMARIES(self) -> int:
-        return config.CONTEXT_MAX_SUMMARIES
+    def _MAX_POOL_ENTRIES(self) -> int:
+        """注入时该取多少条：池子在常态下的上界，即 `_evict_context` 的批量淘汰软上限。
+
+        传这个值而不是 `CONTEXT_HISTORY_ENTRIES`，池内条目才不会被一个比池子容量更小的数字
+        每轮排除——旧实现里池子允许长到 `_MAX_ENTRIES + _EVICT_BATCH_SIZE`，注入却只取
+        `_MAX_ENTRIES`，多出来的那几条既选不进本轮、又够不上淘汰，要等下一次批量淘汰才进摘要队列。
+
+        注意这不是池子的硬上界：工具调用没有条数配额，最近 `CONTEXT_HALF_LIFE_S` 内的工具调用
+        超过 `_MAX_ENTRIES` 减去摘要数时池子会突破它，此时 `get_multi_turn_messages` 的条数裁剪
+        仍会兜底（丢掉最旧的若干条）。
+        """
+        return self._MAX_ENTRIES + self._EVICT_BATCH_SIZE
 
     @property
     def _MAX_HISTORY_SUMMARIES(self) -> int:
@@ -361,7 +373,9 @@ class BrainMixin:
         normal_chats = [e for e in ordinary if not e.content.startswith("[工具调用]")]
 
         # 正常聊天的空间 = 总空间 - 摘要空间 - 工具调用空间
-        base_limit = self._MAX_ENTRIES - len(summaries) - len(tool_calls)
+        # clamp 到 0：预留席位超限时普通对话要全部进摘要队列，
+        # 否则负数切片会按"从倒数第 N 个开始"的语义误保留一批
+        base_limit = max(0, self._MAX_ENTRIES - len(summaries) - len(tool_calls))
         soft_limit = base_limit + self._EVICT_BATCH_SIZE
         if len(normal_chats) > soft_limit:
             normal_chats.sort(key=lambda e: e.timestamp, reverse=True)

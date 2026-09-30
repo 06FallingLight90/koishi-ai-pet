@@ -9,9 +9,10 @@
 `ContextBuilder._build_system(mode, task)`：
 
 1. `prompts.build_system_prompt(mode, task)` 产出的静态块，顺序固定：
-   身份 → 独立生活设定 → 输入可信度 → `<<FEELING>>` 锚点 → 你的人格 → 人格台词范例 →
-   称呼 → 表达底线 → 记忆格式（仅 `autonomous` / `chat`）→ **感知段**（按 `mode`，末尾是动作表）→ **任务段**（按 `task`）。
-   人格与范例为空、记忆格式不适用时会跳过对应块。
+   身份 → 独立生活设定 → 输入可信度 → 你的人格 → 人格台词范例 →
+   称呼 → 表达底线 → 记忆格式（仅 `autonomous` / `chat`）→ **感知段**（按 `mode`，末尾是动作表）→ **任务段**（按 `task`）→ `<<FEELING>>` 锚点。
+   人格与范例为空、记忆格式不适用时会跳过对应块。锚点排在所有静态块之后——运行时块接在它后面，
+   静态前缀（锚点之前）逐轮不变才能命中 prompt 缓存。
 2. 运行时块，拼好后替换掉 `<<FEELING>>` 锚点：
    - `[你现在的状态]`：`_build_feeling()`（数值→自然语言）+ `_build_attention_hint()`（仅自主任务，连续未互动档位）；
    - `[你惦记着的事]`：`_build_needs_note()`（未满足需求 + 该怎么做）+ `_memory_event_note()`（忽然想起来的旧事），
@@ -25,8 +26,9 @@
 
 ## 2. user 段与历史
 
-- user 段承载**每轮都会变的东西**：时间前缀（`_time_prefix`）、窗口探测结果、用户消息或截图。
-  时间不写进 system——system 前缀稳定才能命中 prompt 缓存（`LLM_CACHE_PROMPT`）。
+- user 段承载**每轮都会变、又必须原样进上下文的东西**：时间前缀（`_time_prefix`）、窗口探测结果、
+  用户消息或截图。感受/需求/旧事这类逐轮内容走 system 尾部的锚点（见上），不塞进静态前缀——
+  静态前缀稳定才能命中 prompt 缓存（`LLM_CACHE_PROMPT`）。
 - 历史多轮由 `BrainMixin.get_multi_turn_messages` 装配，先按条数上限淘汰、再按 token 预算淘汰；
   历史里的 system 片段会被 `_merge_system_history` 并成一段 `[上下文备注]` 追加到 system 末尾，
   保持「一个 system + 若干 user/assistant」的干净结构。
@@ -69,12 +71,14 @@
 
 ## 5. 设计取舍（改提示词前请先读）
 
-1. **system 稳定、变化进 user**：时间、窗口、用户消息、截图都在 user 段；
-   否则 prompt 缓存每一轮都会失效。
+1. **稳定前缀、变化进 user**：时间、窗口原始数据、用户消息、截图都在 user 段；
+   感受/需求/旧事等受控运行时块只排在静态 system 前缀之后（`<<FEELING>>` 锚点），
+   否则 prompt 缓存的前缀每一轮都会失效。
 2. **数值不直接进提示词**：先由 `_build_feeling` 译成感受，档位与数值区间一一对应；
    档位表、需求阈值与作息判定见 [vitals-and-mood.md](vitals-and-mood.md) §4。
-3. **「该怎么做」集中在一处**：需求对应的做法只写在「你惦记着的事」章节（`_NEED_HINTS`），
-   感受描述里不放祈使句——两处都给指令时模型会挑一条，行为变得不可预测。
+3. **「该怎么做」集中在一处**：需求对应的做法只写在「你惦记着的事」章节（`_NEED_HINTS`）；
+   静态块、任务段与自主 user prompt 只做抽象引导（「反映当前状态」「见『你惦记着的事』」），
+   感受描述里也不放祈使句——两处都给指令时模型会挑一条，行为变得不可预测。
 4. **被动注入不产生副作用**：旧事走只读查询（不 touch 记忆的访问统计），
    见 [memory.md](memory.md) §3。
 5. **块与任务解耦**：块是常量、任务决定组合，新增任务只需加一个构建函数并在白名单登记。
@@ -83,12 +87,14 @@
 
 1. 新增 `mode` / `task` 要改**三处**（`_PERCEPTION_SECTIONS`、`_TASK_SECTIONS`、组合白名单），
    否则 `ValueError` 或组合被拒。
-2. `_PERCEPTION_SECTIONS` 里的动作表是 `_Lazy(generate_action_section)`——**每次求值会重读 config**，
-   所以改调度间隔后提示词里的时长范围会同步变化（也是它不能被缓存的原因）。
+2. `_PERCEPTION_SECTIONS` 里的动作表是模块级共享的 `_Lazy(generate_action_section)`——**首次求值后缓存**，
+   让 system 前缀在进程内保持稳定。时长范围随 `SCHEDULER_MID_MS` / `LLM_ACTION_MIN_DIVISOR` 变化，
+   调度相关配置变更时由设置界面调用 `prompts.invalidate_action_section()` 显式失效，而不是每轮重算。
 3. 需求阈值必须与感受档位一致（档位与 `_NEED_THRESHOLD` 的权威定义在
    [vitals-and-mood.md](vitals-and-mood.md) §4，`sanity` 走 `SANITY_CRITICAL_THRESHOLD`）。
    两条都有注释与测试锁定。
 4. `_NEEDS_TASKS` 决定哪些任务注入需求块，改它等于改 `interact` 的台词风格。
 5. 任何块的文案改动都会体现在生成物 `docs/reference/prompt-blocks.md` 里 ——
    改完记得 `python scripts/gen_docs.py`，否则 CI 的文档检查会红。
-6. 时间前缀与窗口信息**不要挪进 system**，代价是 prompt 缓存整体失效。
+6. 时间前缀与窗口信息**不要挪进 system 静态前缀**；运行时块也只能接在 `<<FEELING>>` 锚点之后，
+   否则代价是 prompt 缓存整体失效。

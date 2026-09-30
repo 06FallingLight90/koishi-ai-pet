@@ -457,6 +457,8 @@ class ContextBuilder:
             blocks.append(f"[最近发生了什么]\n{events}")
         if blocks:
             content = content.replace(prompts.FEELING_MARKER, "\n\n".join(blocks))
+        else:
+            content = content.replace(f"\n\n{prompts.FEELING_MARKER}", "")
 
         if self._memory_store:
             memory_text = self._memory_store.retrieve_context(user_message)

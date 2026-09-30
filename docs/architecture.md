@@ -55,7 +55,9 @@ flowchart TB
   其余由 `scripts/gen_docs.py` 生成，靠 CI 防漂移。
 - **隔离优先**：测试与文档脚本必须能在不碰用户配置、不装 Qt、不联网的前提下跑起来
   （临时目录 + offscreen + 空模块顶替）。
-- **缓存优先**：提示词里会变的东西一律放 user 段，保住 system 前缀命中服务端缓存。
+- **缓存优先**：system prompt 的静态前缀（身份 → 感知段 → 任务段）必须逐轮保持不变；
+  时间、窗口原始数据、用户消息、截图放 user 段；感受、需求、旧事、事件、召回记忆等受控运行时块
+  只排在静态前缀之后（`<<FEELING>>` 锚点位置），这样服务端缓存仍能命中前缀。
 - **装配集中**：跨层协作靠模块级单例（`config` / `TOOL_REGISTRY` / `TOOL_CTX` / `GAME`）在 `main()`
   里接线，下层不反向 import 上层，详见
   [0009](decisions/0009-layering-by-singletons-and-deferred-imports.md)。
@@ -131,6 +133,7 @@ system prompt 由三段拼起来：
    —— 身份、独立生活设定、输入可信度、人格、称呼、表达底线、记忆格式、感知段（含动作表）、任务段。
 2. **运行时块**：`context_builder._build_system()` 生成后替换 `<<FEELING>>` 锚点
    —— `[你现在的状态]`、`[你惦记着的事]`、`[最近发生了什么]`。
+   锚点排在感知段与任务段之后，运行时块因此落在静态前缀末尾，不破坏前缀缓存。
 3. **记忆检索**：`[你对用户的记忆]`，由 `pet/brain/memory.py` 的召回策略给出。
 
 `mode` 决定感知段、`task` 决定任务段；合法组合是白名单，写错直接抛 `ValueError`。
@@ -244,7 +247,8 @@ system prompt 由三段拼起来：
    与 `build_system_prompt` 里的组合白名单。
 2. **阈值与文案档位同步**：需求判定阈值（`context_builder._NEED_THRESHOLD`）与感受描述的档位必须对齐；
    理智用 `SANITY_CRITICAL_THRESHOLD` 而非通用阈值（理智不参与自然衰减）。
-3. **system 里不写会频繁变化的内容**（时间、窗口、消息），否则 prompt 缓存失效。
+3. **system 前缀逐轮不变**：时间、窗口原始数据、消息、截图放 user 段；感受/需求/旧事等运行时块
+   只能通过 `<<FEELING>>` 锚点排在静态 system 前缀之后，插进前缀中间会让 prompt 缓存整段失效。
 4. **被动注入的记忆不更新访问统计**：`MemoryStore.random_events()` 刻意不 `touch`，
    否则「被抽到」会提高权重，形成自我强化。
 5. **动作名的唯一真源是 `ACTION_NAMES`**：LLM 输出会用它校验，未知动作被丢弃并兜底。

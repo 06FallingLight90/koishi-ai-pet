@@ -565,7 +565,8 @@ def render_actions(data: dict) -> str:
         "",
         "`generate_action_section()` 会把上表渲染成提示词里的 `[可用动作]` 段，"
         "由 `pet/brain/prompts.py` 的 `_PERCEPTION_SECTIONS` 按模式（视觉/非视觉）拼进 system prompt。",
-        "每次调用都会重读 `config`，所以改完 `settings.json` 的调度间隔，提示词里的时长范围会同步变化。",
+        "这段文本被 `_Lazy` 缓存（首次求值后不再重算，保 system 前缀稳定）；改完 `settings.json` 里"
+        "与调度相关的项后，设置界面会调用 `invalidate_action_section()` 让它按新配置重算。",
         "",
         "```text",
         data["sample"].rstrip(),

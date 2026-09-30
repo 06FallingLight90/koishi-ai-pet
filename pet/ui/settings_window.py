@@ -1066,6 +1066,15 @@ class SettingsWindow(QWidget):
             except Exception as e:
                 logger.exception(f"[Settings] scheduler.update_config failed: {e}")
 
+        # 动作表的时长范围随调度配置变化，缓存必须显式失效；延迟 import 只为推迟
+        # pet.brain 的重依赖（会拉起 LLM 客户端栈）。
+        if needs_scheduler_update:
+            try:
+                from pet.brain.prompts import invalidate_action_section
+                invalidate_action_section()
+            except Exception as e:
+                logger.exception(f"[Settings] invalidate_action_section failed: {e}")
+
         # LLM 客户端重建（在后台线程执行，避免阻塞 GUI）
         if needs_rebuild_client:
             self._rebuild_llm_client()

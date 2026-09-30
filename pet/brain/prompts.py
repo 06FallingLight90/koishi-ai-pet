@@ -47,7 +47,7 @@ _NON_VISION_INTRO = """[感知] 非视觉模式
 
 _SELF_LIFE_GUIDE = """[关于你自己]
 你是一个独立个体，你有自己的生活；用户在做的事只是你周围环境的一部分，不是每轮都必须回应的对象。
-- 你有自己的需求和偏好：饿了去找吃的，困了累了找地方睡，闷了想玩点新鲜的，好奇了凑过去看
+- 你有自己的需求和偏好：饿、困、闷、好奇都会牵动你，具体做什么由你自己决定
 - 你可以整轮只做自己的事、完全不涉及用户——钓鱼、巡视桌面、换个地方待着、发呆、研究某个窗口
 - 你会对自身处境有反应：被丢下会失落，被摸头会安心，饿久了会焦躁，发现有趣的东西会雀跃
 - 说话可以从自己的念头出发，而不是每句都指向用户或屏幕
@@ -101,7 +101,11 @@ _EMOTION_LIST = "happy, excited, sad, angry, surprised, thinking, sleepy, love, 
 
 
 class _Lazy:
-    """延迟求值包装器，避免 lambda 闭包陷阱，首次求值后缓存。"""
+    """延迟求值包装器，避免 lambda 闭包陷阱，首次求值后缓存。
+
+    缓存让这段文本在整个进程内保持稳定——system 前缀逐轮不变才能命中
+    prompt 缓存。配置变更后由调用方显式 `invalidate()`，不每轮重算。
+    """
     def __init__(self, fn):
         self.fn = fn
         self._cached = None
@@ -109,14 +113,25 @@ class _Lazy:
         if self._cached is None:
             self._cached = self.fn()
         return self._cached
+    def invalidate(self) -> None:
+        self._cached = None
+
+
+# 动作表的时长范围只由 config 决定，各模式共用同一份缓存即可
+_action_section = _Lazy(generate_action_section)
+
+
+def invalidate_action_section() -> None:
+    """调度相关配置变更后调用，让动作表按新配置重算时长范围"""
+    _action_section.invalidate()
 
 
 _PERCEPTION_SECTIONS = {
-    "autonomous_vision":     [_VISION_INTRO, _WINDOW_GUIDE, _Lazy(generate_action_section)],
-    "autonomous_non_vision": [_NON_VISION_INTRO, _WINDOW_GUIDE, _Lazy(generate_action_section)],
-    "chat_vision":           [_CHAT_INTRO, _VISION_INTRO, _WINDOW_GUIDE, _Lazy(generate_action_section)],
-    "chat_non_vision":       [_CHAT_INTRO, _WINDOW_GUIDE, _Lazy(generate_action_section)],
-    "interact":              [_Lazy(generate_action_section)],
+    "autonomous_vision":     [_VISION_INTRO, _WINDOW_GUIDE, _action_section],
+    "autonomous_non_vision": [_NON_VISION_INTRO, _WINDOW_GUIDE, _action_section],
+    "chat_vision":           [_CHAT_INTRO, _VISION_INTRO, _WINDOW_GUIDE, _action_section],
+    "chat_non_vision":       [_CHAT_INTRO, _WINDOW_GUIDE, _action_section],
+    "interact":              [_action_section],
 }
 
 
@@ -185,7 +200,7 @@ def _chat_task() -> list[str]:
     constraints = [
         "[核心规则]",
         "1. 不重复近期言行，动作选择多样化，根据对话内容和情绪变换组合",
-        "2. 言行必须反映当前状态：饿了就说想吃东西，累了就多睡一会儿，不开心就撒娇求摸摸头；心里没放下的需求见「你惦记着的事」；理智正常时说话要通顺可理解，只有理智极低时才允许说胡话",
+        "2. 言行必须反映当前状态：心里没放下的需求见「你惦记着的事」；理智正常时说话要通顺可理解，只有理智极低时才允许说胡话",
         "3. 台词、动作、互动方式必须遵循人格",
         "4. 对话中判断需要使用工具，则调用，否则不调用；多个互不依赖的工具调用可以一次并行发出",
         "5. 至少 3 个 Action，每行一个，格式 Action: 动作名 [参数...]，动作名从动作表选取",
@@ -282,8 +297,6 @@ def build_system_prompt(mode: str, task: str, include_feeling_marker: bool = Tru
 
     sections: list[str] = [_IDENTITY_GUIDE, _SELF_LIFE_GUIDE, _TRUST_GUIDE]
 
-    if include_feeling_marker:
-        sections.append(FEELING_MARKER)
     if config.PET_PERSONALITY:
         sections.append(f"[你的人格]\n{config.PET_PERSONALITY}")
     if config.PET_PERSONALITY_EXAMPLES:
@@ -298,6 +311,10 @@ def build_system_prompt(mode: str, task: str, include_feeling_marker: bool = Tru
         sections.append(str(item))
 
     sections.extend(_TASK_SECTIONS[task]())
+
+    # 锚点放在所有静态块之后
+    if include_feeling_marker:
+        sections.append(FEELING_MARKER)
 
     return "\n\n".join(sections)
 
@@ -321,8 +338,6 @@ def autonomous_vision_user_prompt(context: str) -> str:
         f"4. 规划动作序列：围绕你这轮的主题来安排，中间穿插驻留类动作，最后用耗时动作收尾，按输出格式要求凑满时长\n"
         f"   • 有窗口 → 可以过去看看或跳上顶部待着（也可以不去），参数用探测数据的「相对桌宠」和「上跳_N_px」\n"
         f"   • 无窗口 → 巡视桌面或找地方坐下\n"
-        f"   • 饿了 → 觅食或者向用户讨要食物\n"
-        f"   • 困了/深夜 → 睡一会儿（sleep）\n"
         f"5. 理智不正常时话语可以混乱，但行为必须无害——不做破坏性操作，不主动写/覆盖文件、打开未知网页或改动用户环境；多个独立工具可一次并行调用\n"
         f"6. 画面没什么变化时不要硬找新话题、不要给画面加戏或堆砌修辞；可以说当下的感受，也可以用很短的句子\n"
         f"7. 按顺序写出完整输出（Summary → Emotion → Speech(可选) → Actions → Mood）"
@@ -344,8 +359,6 @@ def autonomous_non_vision_user_prompt(context: str) -> str:
         f"   • 有窗口 → 可以过去看看或待着（也可以不去）\n"
         f"   • 无窗口 → 巡视桌面或找地方坐下\n"
         f"   • 移动方向可随机\n"
-        f"   • 饿了 → 觅食或者向用户讨要食物\n"
-        f"   • 困了/深夜 → 睡一会儿（sleep）\n"
         f"4. 理智不正常时话语可以混乱，但行为必须无害——不做破坏性操作，不主动写/覆盖文件、打开未知网页或改动用户环境；多个独立工具可一次并行调用\n"
         f"5. 避免与近期台词重复；没什么想说就简短表达当下的感觉\n"
         f"6. 按顺序写出完整输出（Summary → Emotion → Speech(可选) → Actions → Mood）"

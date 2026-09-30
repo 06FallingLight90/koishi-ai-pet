@@ -207,7 +207,7 @@ system prompt 由三段拼起来：
 | `pet/game/` | 小游戏：猜数字、猜拳、井字棋、二十问 | `gamebase.py` 与各游戏 |
 | `pet/voice/` | 语音输入：热键、麦克风采集、讯飞听写 | `voice_session.py` |
 | `assets/` | 素材：每个动作一个目录（`<name>.json` + 帧 webp） | `assets/actions/` |
-| `tests/` | pytest 用例（CI 在 ubuntu + windows 上跑） | 见 `CONTRIBUTING.md` |
+| `tests/` | pytest 用例（CI 在 ubuntu + windows 上跑） | 见 `CONTRIBUTING.md`；结构红线见 [test_architecture_contracts.py](../tests/test_architecture_contracts.py) |
 
 顶层模块（`pet/*.py`）：
 
@@ -276,6 +276,30 @@ system prompt 由三段拼起来：
 15. **函数内延迟 import 只在两种情况下写**：打断循环依赖、推迟重依赖（Qt / 平台后端 / playwright）。
     没有理由就不要延迟，写了就在旁边注明原因。
 
+### 哪些红线已经由测试守住
+
+`tests/test_architecture_contracts.py` 用 AST 与文件系统扫描静态检查下表的红线
+（不 import 业务模块、不需要 Qt、不联网），失败消息按
+「rule id / 证据 / 为什么 / 怎么修 / 示例 / 文档引用」输出：
+
+| Rule | 守住哪条约定 |
+|---|---|
+| `ARCH001` | 第 13 条依赖方向（含 `pet.tools.context` 零依赖） |
+| `ARCH002` | 第 15 条延迟 import：只放行打断环与推迟重依赖两类 |
+| `ARCH003` | 第 8 条工具目录契约（`TOOL_NAME` 同名、`register(registry)`、`config.json` 不入库） |
+| `ARCH004` | §12「三个平台保持同一接口」 |
+| `ARCH005` | 第 12、15 条：纯逻辑模块不许顶层 import Qt / 平台后端 / playwright |
+| `ARCH006` | 第 14 条跨对象私有访问（`obj._attr`、私有 import、`sys.modules[...]` 三种写法） |
+| `ARCH007` | 第 9 条素材成对 |
+| `ARCH008` | §14 登记的包内 import 环之外不再新增 |
+| `ARCH009` | 第 12 条模块级副作用：只留常量、类型、定义与注册表登记 |
+| `ARCH000` | 元规则：债还清后忘删 allowlist 条目时报出 |
+
+既有设计债登记在该测试的 allowlist 里（每条写明原因、文档依据与跟踪 issue），
+**新增违规一律失败**；还清一笔就在同一次改动里删掉对应条目。
+全大写真源常量（`_KEY_META`、`_SPAWNERS`、`_COLOR_*`）与标准库私有名（`os._exit`）
+不算跨对象私有访问。判不了的仍然靠评审：线程亲和、Qt 信号连接类型、调用时序。
+
 ## 12. 常见改动入口
 
 | 想做什么 | 改哪里 | 别忘了 |
@@ -310,8 +334,9 @@ system prompt 由三段拼起来：
 | `pet.brain` → `behavior` → `context_builder` → `pet.brain` | 唯一的**真实顶层环** | `context_builder.py` 写的是 `from pet.brain import prompts`，绕回包 `__init__`；靠 Python「from 包 import 子模块」的兜底才没炸。改成 `from pet.brain.prompts import ...` 就能断开 |
 | `pet.tools.todo` ↔ `pet.tools.todo.panel` | 设计层面，靠函数内延迟 import 规避 | 面板与工具主体互相引用，出路是把共享状态抽到第三个模块 |
 
-这两处环是已登记的债，进 allowlist 冻结即可；包内环可以用 AST 构图做 SCC 常态检测，只把已知的
-两处留在 allowlist，新环直接报错。
+这两处环是已登记的债；`pet.tools.todo` ↔ `panel` 靠 `ARCH006` 盯着（面板模块级回指包的
+`_instance`），模块级 import 图上的真实环只有 `pet.brain` 一处、由 `ARCH008` 冻结。冻结清单
+与全部既有债见 `tests/test_architecture_contracts.py` 的 allowlist（§11「哪些红线已经由测试守住」）。
 
 其余函数内 import 大多正当（见 §11 第 15 条）；也有随手写的，比如
 `pet_agent.recover_stuck_brain()` 里的 `from pet.agent.state import PetState`——同一个模块在文件头
@@ -331,7 +356,7 @@ LLM 客户端与重试管理、流式与非流式调用、两套输出解析、�
 
 | 位置 | 访问了什么 |
 |---|---|
-| `pet/action/action.py`（47 处） | `gravity._vy` / `_clamp_pos()` / `_cached_effective_bottom` / `_standing_hwnd` 等——行走与 drive 直接读重力内部状态，是最大的一处耦合 |
+| `pet/action/action.py`（46 处、8 个符号） | `gravity._vy` / `_clamp_pos()` / `_cached_effective_bottom` / `_standing_hwnd` 等——行走与 drive 直接读重力内部状态，是最大的一处耦合 |
 | `pet/app.py` | `agent._voice_session`、`agent.behavior._save_context()`、`window._quit_fn`、`tray._quit_fn` |
 | `pet/brain/behavior.py` | `executor._execute_one()`、`executor._normalize()`、`memory_store._db_path` |
 | `pet/brain/context_builder.py` | `brain._MAX_POOL_ENTRIES`：注入条数上限由池子的拥有者决定，只读派生值，不涉及可变状态 |
@@ -346,3 +371,7 @@ LLM 客户端与重试管理、流式与非流式调用、两套输出解析、�
 
 「跨对象私有访问」不只 `obj._attr` 一种写法：`from pet.x.y import _Private`（导入私有类/常量）与
 `sys.modules["pet.x"]._panel`（绕过 import 直接取私有模块属性）同样算，检查或评审时不要漏。
+
+全量冻结清单（逐符号落到「文件 + 属性名」）在 `tests/test_architecture_contracts.py` 的
+allowlist 里，每条带原因与文档依据，比上表多出的部分是扫描时新登记的；还清一笔就在同一次改动里
+删掉对应条目，`ARCH000` 会报出忘删的陈旧条目。

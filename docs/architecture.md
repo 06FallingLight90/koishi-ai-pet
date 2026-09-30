@@ -46,7 +46,9 @@ flowchart TB
 ```
 
 分层的边界是：`ui` 只管画与点，`agent` 管编排，`brain` 管与模型交互与记忆，`action` 管动作执行，
-`pulse` 管数值，`tools` 是被 LLM 调用的外部能力。
+`pulse` 管数值，`tools` 是被 LLM 调用的外部能力。另有三个**外围模块**：`food`（觅食玩法）、
+`game`（小游戏）、`voice`（语音输入）——它们只依赖 `config` 与 `tools.context`，要让桌宠说话、记一笔
+或弹面板时一律走 `TOOL_CTX` 或注入回调，**不得**直接 import `ui` / `agent`（依赖方向见 §11.13）。
 
 贯穿全项目的几条取向，改动时可以拿它们当尺子：
 
@@ -262,8 +264,13 @@ system prompt 由三段拼起来：
 11. **文档与代码同步**：改动配置/动作/工具/特效/提示词块后运行 `python scripts/gen_docs.py`，
     CI 会用 `--check` 拦截漂移。
 12. **新增 `.py` 不要引入导入期副作用**：包导入期会安装崩溃钩子，测试与文档脚本都靠顶替模块来隔离。
-13. **依赖方向只能自上而下**：`ui` / `agent` 可以用 `brain` / `action` / `pulse` / `tools`，反向不行。
-    下层要驱动上层（让桌宠说话、记一笔）用 `TOOL_CTX`，不要 import 上层模块。
+    模块级只允许常量、类型、函数/类定义与注册表登记；实例化对象、开文件或数据库、连网、起线程
+    都要推迟到首次使用。
+13. **依赖方向只有一条硬红线**：`ui` / `agent` 是上层，其余包（`brain` / `action` / `pulse` / `tools` /
+    `food` / `game` / `voice`）一律不得顶层 import 它们；要驱动上层（让桌宠说话、记一笔、弹面板）
+    用 `TOOL_CTX` 或注入回调，实现由 `pet/app.py` 的 `main()` 装配。
+    下层之间有既有的双向依赖（`brain` ↔ `action`、`brain` ↔ `tools`），新增时只要不把上面这条红线
+    反向、不制造新的环（见 §14）即可。
 14. **不要跨对象访问私有成员**：需要别的类的能力就给它一个公开方法，或者把协作提到调用方。
     现存的例外列在 §14，新代码不要再加。
 15. **函数内延迟 import 只在两种情况下写**：打断循环依赖、推迟重依赖（Qt / 平台后端 / playwright）。
@@ -303,6 +310,9 @@ system prompt 由三段拼起来：
 | `pet.brain` → `behavior` → `context_builder` → `pet.brain` | 唯一的**真实顶层环** | `context_builder.py` 写的是 `from pet.brain import prompts`，绕回包 `__init__`；靠 Python「from 包 import 子模块」的兜底才没炸。改成 `from pet.brain.prompts import ...` 就能断开 |
 | `pet.tools.todo` ↔ `pet.tools.todo.panel` | 设计层面，靠函数内延迟 import 规避 | 面板与工具主体互相引用，出路是把共享状态抽到第三个模块 |
 
+这两处环是已登记的债，进 allowlist 冻结即可；包内环可以用 AST 构图做 SCC 常态检测，只把已知的
+两处留在 allowlist，新环直接报错。
+
 其余函数内 import 大多正当（见 §11 第 15 条）；也有随手写的，比如
 `pet_agent.recover_stuck_brain()` 里的 `from pet.agent.state import PetState`——同一个模块在文件头
 已经导入过了。新代码别照抄这种。
@@ -333,3 +343,6 @@ LLM 客户端与重试管理、流式与非流式调用、两套输出解析、�
 
 `context_builder.py` 里的 11 处 `ContextBuilder._XXX` 是访问自己类的常量，不算越界。
 清单之外的私有访问，改到时顺手给个公开方法（或把协作提到调用方）。
+
+「跨对象私有访问」不只 `obj._attr` 一种写法：`from pet.x.y import _Private`（导入私有类/常量）与
+`sys.modules["pet.x"]._panel`（绕过 import 直接取私有模块属性）同样算，检查或评审时不要漏。

@@ -42,6 +42,7 @@
 | [decisions/](decisions/README.md) | 决策记录 | 手写 | 设计决策记录（ADR），索引见该目录的 README | 做出取舍时新增一条 |
 | [specs/2026-09-29-context-injection-pool-unify-design.md](specs/2026-09-29-context-injection-pool-unify-design.md) | 设计文档 | 手写 | 候选池容量与每轮注入上限合并的根因、方案取舍、被否决的备选方案 | 动手前写，落地后补齐结论 |
 | [specs/2026-09-29-context-injection-pool-unify-plan.md](specs/2026-09-29-context-injection-pool-unify-plan.md) | 实施计划 | 手写 | 该改动拆成的任务、每步的命令与验收标准 | 执行时逐项勾选 |
+| [specs/2026-09-30-agent-oriented-architecture-feedback-design.md](specs/2026-09-30-agent-oriented-architecture-feedback-design.md) | 设计文档 | 手写 | 把架构红线做成面向 Agent 的契约测试：规则表、失败格式、误报缓解、allowlist 收敛边界 | 动手前写，落地后补齐结论 |
 | [../CHANGELOG.md](../CHANGELOG.md) | 事实参考 | 生成 | 按版本分组的变更记录 | `python scripts/gen_changelog.py` |
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) | 操作指南 | 手写 | 开发流程、测试、提交与 PR 规范 | 流程变化时人工更新 |
 

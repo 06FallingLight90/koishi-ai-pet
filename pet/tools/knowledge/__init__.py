@@ -15,28 +15,14 @@ TOOL_DESCRIPTION = "RAG 知识库。可语义检索用户手动录入的知识�
 TOOL_GROUP = "knowledge"
 
 _instance = None
-_panel = None
 
 
 def _show_panel():
     """右键菜单「知识库管理」回调 — 弹出管理面板。"""
-    global _panel
-    from pet.tools.knowledge.panel import KnowledgePanel
+    # 面板依赖 Qt，延迟到实际弹出时导入
+    from pet.tools.knowledge.panel import show_panel
 
-    if _panel is not None:
-        try:
-            alive = _panel.isVisible()
-        except RuntimeError:
-            alive = False
-        if not alive:
-            _panel.deleteLater()
-            _panel = None
-
-    if _panel is None:
-        _panel = KnowledgePanel(_instance)
-
-    _panel.show()
-    _panel.raise_()
+    show_panel(_instance)
 
 
 def _search(query: str, limit: int = 3) -> dict:
@@ -125,7 +111,5 @@ def register(registry):
 
     registry.add_menu_action(TOOL_NAME, "知识库管理", _show_panel)
 
-
-    TOOL_CTX.register_panel(TOOL_NAME, _show_panel)
 
     logger.info("[knowledge] tool registered")

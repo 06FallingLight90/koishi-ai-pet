@@ -65,7 +65,7 @@
 | `pet/tools/file_ops/core.py` | （模块未提供 docstring） | `FileOpsTool` |
 | `pet/tools/knowledge/__init__.py` | knowledge 工具 — 轻量 RAG 知识库。只读检索，写入/删除仅限面板操作。 | `register()` |
 | `pet/tools/knowledge/chunker.py` | 轻量文本分块器 — 按段落 + 字数窗口切分。 | `chunk_text()` |
-| `pet/tools/knowledge/panel.py` | 知识库管理面板 — 添加、导入文件、搜索、删除。 | `KnowledgePanel` |
+| `pet/tools/knowledge/panel.py` | 知识库管理面板 — 添加、导入文件、搜索、删除。 | `KnowledgePanel` `show_panel()` |
 | `pet/tools/knowledge/storage.py` | 知识库存储层 — SQLite + sqlite-vec 向量检索。 | `KnowledgeStorage` |
 | `pet/tools/registry.py` | 工具注册表 — 自动发现、注册、描述可用工具。 | `ToolMethod` `ToolDef` `ToolRegistry` |
 | `pet/tools/system_monitor/__init__.py` | （模块未提供 docstring） | `register()` |
@@ -75,8 +75,9 @@
 | `pet/tools/timer/storage.py` | 定时器持久化 — SQLite 存储，重启后可恢复未完成的定时器。 | `TimerStorage` |
 | `pet/tools/todo/__init__.py` | todo 工具 — 极简单代办事项管理。 | `register()` |
 | `pet/tools/todo/core.py` | TodoList 核心处理逻辑 — LLM 可见方法实现。 | `TodoListTool` |
-| `pet/tools/todo/panel.py` | Todo 管理面板 | `TodoPanel` |
+| `pet/tools/todo/panel.py` | Todo 管理面板 | `TodoPanel` `show_panel()` |
 | `pet/tools/todo/storage.py` | Todo 持久化存储 — SQLite 数据层。 | `TodoStorage` |
+| `pet/tools/todo/store.py` | todo 工具实例的持有者 — 工具入口与面板共享同一实例，避免面板回指工具包。 | `init_instance()` `get_instance()` |
 | `pet/tools/todo/style.py` | （模块未提供 docstring） |  |
 | `pet/tools/weather/__init__.py` | （模块未提供 docstring） | `register()` |
 | `pet/tools/weather/core.py` | 通过 Open-Meteo 免费 API 获取实时天气和预报。 | `get_current()` `get_forecast()` |
@@ -112,4 +113,4 @@
 | `pet/voice/voice_session.py` | 语音会话编排：麦克风采集 → 讯飞识别 | `VoiceSession` |
 | `pet/voice/xunfei_stt.py` | 讯飞语音听写 (iat) WebSocket API 封装 | `XunfeiSTT` |
 
-共 104 个模块。
+共 105 个模块。

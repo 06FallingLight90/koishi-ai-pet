@@ -1010,11 +1010,6 @@ ALLOWLIST: dict[str, list[Debt]] = {
                "退出与提交路径直呼窗口私有方法与槽", f"{ARCH_DOC} §11.14")
         + _sym("pet/app.py", "_w", ["_force_close"],
                "退出与提交路径直呼窗口私有方法与槽", f"{ARCH_DOC} §11.14")
-        + _sym("pet/app.py", "SettingsWindow", ["_instance"],
-               "读 SettingsWindow 单例私有字段", f"{ARCH_DOC} §11.14")
-        + [Debt(("pet/app.py", "_mod", "_panel"),
-                "经 sys.modules 越读工具面板私有全局，删除死通道时一并消除",
-                f"{ARCH_DOC} §11.14", issue=21)]
         + _sym("pet/brain/behavior.py", "memory_store", ["_db_path"],
                "Behavior 直驱 executor 与 memory_store 内部", f"{ARCH_DOC} §14")
         + _sym("pet/brain/behavior.py", "executor", ["_execute_one", "_normalize"],
@@ -1033,10 +1028,6 @@ ALLOWLIST: dict[str, list[Debt]] = {
                 "recall 元工具导入未公开的检索器", f"{ARCH_DOC} §11.14", issue=23)]
         + _sym("pet/tools/registry.py", "_MemoryRetriever", ["_format_memory_time"],
                "recall 元工具复用未公开的检索器与时间格式化", f"{ARCH_DOC} §11.14", issue=23)
-        + [Debt(("pet/tools/todo/panel.py", "_instance"),
-                "面板导入工具主体私有单例（§14 登记的环）", f"{ARCH_DOC} §14", issue=21)]
-        + _sym("pet/tools/todo/panel.py", "self._core", ["_storage"],
-               "面板与工具主体互相引用（§14 登记的环）", f"{ARCH_DOC} §14", issue=21)
         + _sym("pet/tools/__init__.py", "TOOL_REGISTRY", ["_tools"],
                "工具加载器读 TOOL_REGISTRY._tools", f"{ARCH_DOC} §14")
         + _sym("pet/ui/pet_window.py", "TOOL_REGISTRY", ["_tools"],
@@ -1101,11 +1092,6 @@ ALLOWLIST: dict[str, list[Debt]] = {
              "导入期查询系统特殊目录（Shell API）", f"{ARCH_DOC} §11.12"),
         Debt(("pet/tools/registry.py", "TOOL_REGISTRY"),
              "TOOL_REGISTRY 单例（ADR 0009 装配模式），构造无副作用", f"{ARCH_DOC} §11.12; {ADR_LAYERING}"),
-        Debt(("pet/tools/todo/__init__.py", "_instance"),
-             "导入期实例化 TodoListTool，db 不可用时静默失败；实例应移进 register()",
-             f"{ARCH_DOC} §11.12", issue=21),
-        Debt(("pet/tools/todo/__init__.py", "logger.error"),
-             "todo 导入期初始化失败的日志，随 _instance 一并消除", f"{ARCH_DOC} §11.12", issue=21),
         Debt(("pet/tools/web_search/core.py", "logging.getLogger"),
              "导入期调低 trafilatura 日志级别（改全局状态）", f"{ARCH_DOC} §11.12"),
         Debt(("pet/ui/emotion.py", "VALID_EMOTIONS"),

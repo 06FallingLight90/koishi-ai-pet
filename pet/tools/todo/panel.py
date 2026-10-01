@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 
-from pet.tools.todo import _instance as _todo_instance
+from pet.tools.todo.core import TodoListTool
 from pet.tools.todo.style import LIST_QSS, BUTTON_QSS
 
 logger = logging.getLogger(__name__)
@@ -19,14 +19,16 @@ logger = logging.getLogger(__name__)
 _W = 420
 _H = 520
 
+# 面板单例引用（防 GC 回收；已关闭的实例在下次 show_panel 时回收）
+_current: "TodoPanel | None" = None
+
 
 class TodoPanel(QWidget):
     """任务管理面板 — 无边框圆角窗口，标题栏可拖动。"""
 
-    def __init__(self):
+    def __init__(self, core: TodoListTool):
         super().__init__()
-        self._core = _todo_instance
-        self._storage = self._core._storage
+        self._core = core
         self._drag_pos: QPoint | None = None
 
         self.setObjectName("todoPanel")
@@ -160,7 +162,7 @@ class TodoPanel(QWidget):
 
 
     def _refresh(self):
-        items = self._storage.list()
+        items = self._core.list_todos(status="all")["items"]
         self._list.clear()
         for t in items:
             if t["status"] == "done":
@@ -168,7 +170,7 @@ class TodoPanel(QWidget):
             else:
                 text = f"  [ ] {t['title']}"
             item = QListWidgetItem(text)
-            item.setData(Qt.ItemDataRole.UserRole, t["id"])
+            item.setData(Qt.ItemDataRole.UserRole, t["todo_id"])
             item.setData(Qt.ItemDataRole.ToolTipRole, t["title"])
             self._list.addItem(item)
         done_count = sum(1 for t in items if t["status"] == "done")
@@ -207,14 +209,14 @@ class TodoPanel(QWidget):
         if not title:
             return
 
-        self._storage.add(title=title)
+        self._core.add(title=title)
         self._refresh()
 
     def _on_toggle(self):
         tid = self._current_id()
         if tid is None:
             return
-        self._storage.toggle(tid)
+        self._core.toggle(tid)
         self._refresh()
 
     def _on_list_context_menu(self, pos):
@@ -238,5 +240,22 @@ class TodoPanel(QWidget):
         reply = QMessageBox.question(
             self, "确认删除", "确定要删除这个任务吗？")
         if reply == QMessageBox.StandardButton.Yes:
-            self._storage.delete(tid)
+            self._core.delete(tid)
             self._refresh()
+
+
+def show_panel(core: TodoListTool) -> None:
+    """显示管理面板（模块内单例）：已关闭的重建，存活的置顶。"""
+    global _current
+    if _current is not None:
+        try:
+            alive = _current.isVisible()
+        except RuntimeError:
+            alive = False
+        if not alive:
+            _current.deleteLater()
+            _current = None
+    if _current is None:
+        _current = TodoPanel(core)
+    _current.show()
+    _current.raise_()

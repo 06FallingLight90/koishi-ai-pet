@@ -14,7 +14,6 @@ class ToolContext:
 
     def __init__(self):
         self._agent = None
-        self._panels: dict[str, Callable] = {}
         self._pending_callbacks: list[Callable] = []
         self._model_aside_pending = 0
         self._speech_lock = threading.Lock()
@@ -123,14 +122,6 @@ class ToolContext:
         """取消一个已注册的一次性闹钟（幂等）。"""
         if self._check_agent():
             self._agent.scheduler.cancel_alarm_by_key(key)
-
-    def register_panel(self, tool_name: str,
-                       factory: Callable[[], object]):
-        self._panels[tool_name] = factory
-        logger.info(f"[ToolContext] panel registered: {tool_name}")
-
-    def get_panel_factory(self, tool_name: str) -> Callable | None:
-        return self._panels.get(tool_name)
 
     def on_bind(self, callback: Callable[[], None]):
         if self._agent is not None:

@@ -329,14 +329,10 @@ system prompt 由三段拼起来：
 
 ### 依赖环
 
-| 环 | 性质 | 现状与出路 |
-|---|---|---|
-| `pet.tools.todo` ↔ `pet.tools.todo.panel` | 设计层面，靠函数内延迟 import 规避 | 面板与工具主体互相引用，出路是把共享状态抽到第三个模块 |
-
-依赖环已全部清偿，只余 `pet.tools.todo` ↔ `panel` 一处：面板模块级回指包的 `_instance` 作为
-allowlist 条目在 `ARCH006` 下放行，出路见上表。`pet.brain` 的真实顶层环随 Issue #19 改为
-子模块直导后断开（`context_builder.py` 由 `from pet.brain import prompts` 改为
-`from pet.brain.prompts import ...`）；模块 import 图由 `ARCH008` 静态扫描，导入顺序由
+依赖环已全部清偿，当前无登记项：`pet.brain` 的真实顶层环随 Issue #19 改为子模块直导后断开
+（`context_builder.py` 由 `from pet.brain import prompts` 改为 `from pet.brain.prompts import ...`）；
+`pet.tools.todo` ↔ `panel` 的设计回绕随 Issue #21 改为实例持有模块（`todo/store.py`）与面板
+构造注入（`TodoPanel(core)`）后消除。模块 import 图由 `ARCH008` 静态扫描，导入顺序由
 `tests/test_import_smoke.py` 的冷启动子进程覆盖。冻结清单与全部既有债见
 `tests/test_architecture_contracts.py` 的 allowlist（§11「哪些红线已经由测试守住」）。
 

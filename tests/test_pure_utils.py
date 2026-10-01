@@ -72,13 +72,21 @@ class TestLightweightImports:
     ])
     def test_no_qt_dependency(self, module):
         code = (
-            "import sys, importlib\n"
+            # 子进程不加载 conftest，需自行顶替崩溃钩子，避免改写 logs/startup.state
+            "import sys, types\n"
+            "stub = types.ModuleType('pet.crash_reporter')\n"
+            "stub.install = lambda: None\n"
+            "sys.modules.setdefault('pet.crash_reporter', stub)\n"
+            "import importlib\n"
             f"importlib.import_module({module!r})\n"
             "assert 'PySide6' not in sys.modules, sorted(\n"
             "    m for m in sys.modules if m.startswith('PySide6'))\n"
         )
-        proc = subprocess.run([sys.executable, "-c", code],
-                              capture_output=True, text=True)
+        try:
+            proc = subprocess.run([sys.executable, "-c", code],
+                                  capture_output=True, text=True, timeout=60)
+        except subprocess.TimeoutExpired:
+            pytest.fail(f"模块 {module} 导入超时（60s）")
         assert proc.returncode == 0, proc.stderr
 
 

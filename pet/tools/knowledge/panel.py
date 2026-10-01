@@ -12,10 +12,15 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 
+from pet.tools.knowledge.storage import KnowledgeStorage
+
 logger = logging.getLogger(__name__)
 
 _W = 600
 _H = 620
+
+# 面板单例引用（防 GC 回收；已关闭的实例在下次 show_panel 时回收）
+_current: "KnowledgePanel | None" = None
 
 
 class KnowledgePanel(QWidget):
@@ -376,3 +381,20 @@ class KnowledgePanel(QWidget):
         if item:
             return item.data(Qt.ItemDataRole.UserRole)
         return None
+
+
+def show_panel(storage: KnowledgeStorage) -> None:
+    """显示管理面板（模块内单例）：已关闭的重建，存活的置顶。"""
+    global _current
+    if _current is not None:
+        try:
+            alive = _current.isVisible()
+        except RuntimeError:
+            alive = False
+        if not alive:
+            _current.deleteLater()
+            _current = None
+    if _current is None:
+        _current = KnowledgePanel(storage)
+    _current.show()
+    _current.raise_()

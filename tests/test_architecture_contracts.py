@@ -60,20 +60,25 @@ class ContractViolation:
         return "\n".join(lines)
 
 
+# allowlist 匹配键：多数规则是 (文件, 符号) 元组，ARCH006 是 (文件, 接收者, 私有成员)，
+# ARCH008 的环是模块名 frozenset
+DebtKey = tuple | frozenset
+
+
 @dataclass(frozen=True)
 class Debt:
     """allowlist 条目：为什么现在还不能修 + 依据在哪 + 跟踪 issue。"""
 
-    key: tuple | frozenset
+    key: DebtKey
     reason: str
     reference: str
     issue: int | None = None
 
 
-def _sym(rel: str, symbols: list[str], reason: str, reference: str,
+def _sym(rel: str, receiver: str, symbols: list[str], reason: str, reference: str,
          issue: int | None = None) -> list[Debt]:
-    """同一文件里一批同类符号共用一条原因。"""
-    return [Debt((rel, symbol), reason, reference, issue) for symbol in symbols]
+    """同一接收者上一批同类私有成员共用一条原因；ARCH006 的键是 (文件, 接收者, 私有成员)。"""
+    return [Debt((rel, receiver, symbol), reason, reference, issue) for symbol in symbols]
 
 
 class Ledger:
@@ -81,7 +86,7 @@ class Ledger:
 
     def __init__(self, allowlist: dict[str, list[Debt]]):
         self.by_rule = {rule: {d.key: d for d in entries} for rule, entries in allowlist.items()}
-        self.hit: set[tuple[str, tuple]] = set()
+        self.hit: set[tuple[str, DebtKey]] = set()
 
     def exempt(self, rule: str, key) -> bool:
         if key in self.by_rule.get(rule, {}):
@@ -113,22 +118,25 @@ _MODULE_CONTAINERS = (ast.If, ast.Try, ast.With, ast.AsyncWith, ast.For, ast.Asy
 
 
 def _module_statements(tree: ast.Module):
-    """导入期执行的语句：穿过 if/try/with/for 容器，不进函数与类体。"""
-    stack = list(tree.body)
+    """导入期执行的语句：穿过 if/try/with/for 容器，不进函数与类体。
+
+    反向入栈使产出顺序与源码一致，报告里的「首次命中」才符合阅读直觉。
+    """
+    stack = list(reversed(tree.body))
     while stack:
         node = stack.pop()
         yield node
         if isinstance(node, ast.If):
-            stack.extend(node.body)
-            stack.extend(node.orelse)
+            stack.extend(reversed(node.body))
+            stack.extend(reversed(node.orelse))
         elif isinstance(node, ast.Try):
-            stack.extend(node.body)
+            stack.extend(reversed(node.body))
             for handler in node.handlers:
-                stack.extend(handler.body)
-            stack.extend(node.orelse)
-            stack.extend(node.finalbody)
+                stack.extend(reversed(handler.body))
+            stack.extend(reversed(node.orelse))
+            stack.extend(reversed(node.finalbody))
         elif isinstance(node, _MODULE_CONTAINERS):
-            stack.extend(node.body)
+            stack.extend(reversed(node.body))
 
 
 class Scanner:
@@ -361,6 +369,52 @@ WINDOW_DETECTOR_API = {"is_window_alive", "get_window_rect", "is_window_occluded
 DETECTORS = ("win_detector.py", "mac_detector.py", "linux_detector.py")
 
 
+@dataclass(frozen=True)
+class _Sig:
+    """调用兼容的最小签名形态：位置参数个数、默认值个数、*args、仅关键字参数、**kwargs、异步。"""
+
+    pos: int
+    defaults: int
+    vararg: bool
+    kwonly: int
+    kwarg: bool
+    async_: bool
+
+    @classmethod
+    def of(cls, func: ast.FunctionDef | ast.AsyncFunctionDef) -> _Sig:
+        args = func.args
+        return cls(
+            pos=len(args.posonlyargs) + len(args.args),
+            defaults=len(args.defaults),
+            vararg=args.vararg is not None,
+            kwonly=len(args.kwonlyargs),
+            kwarg=args.kwarg is not None,
+            async_=isinstance(func, ast.AsyncFunctionDef),
+        )
+
+    def render(self) -> str:
+        parts = [f"{self.pos} 个位置参数"]
+        if self.defaults:
+            parts.append(f"{self.defaults} 个默认值")
+        if self.vararg:
+            parts.append("*args")
+        if self.kwonly:
+            parts.append(f"{self.kwonly} 个仅关键字参数")
+        if self.kwarg:
+            parts.append("**kwargs")
+        parts.append("异步" if self.async_ else "同步")
+        return "、".join(parts)
+
+
+# 探测契约的期望签名：名字对了、调用形态漂移同样会让对应平台 TypeError
+WINDOW_DETECTOR_SIGNATURES = {
+    "is_window_alive": _Sig(1, 0, False, 0, False, False),
+    "get_window_rect": _Sig(1, 0, False, 0, False, False),
+    "is_window_occluded": _Sig(3, 2, False, 0, False, False),
+    "get_visible_windows": _Sig(0, 0, False, 0, False, False),
+}
+
+
 def rule_arch001(scanner: Scanner):
     """§11.13：除 ui / agent 自身与装配入口 pet/app.py 外，谁都不许 import 它们。"""
     for path in scanner.paths:
@@ -521,14 +575,14 @@ def _git_tracked(prefix: str) -> set[str]:
 
 
 def rule_arch004(scanner: Scanner):
-    """§12：三个平台的窗口探测后端必须暴露同一组函数。"""
+    """§12：三个平台的窗口探测后端必须暴露同名、同调用形态的函数。"""
     for name in DETECTORS:
         path = PET / "brain" / name
         if not path.is_file():
             continue
-        funcs = {n.name for n in scanner.tree[path].body
+        funcs = {n.name: n for n in scanner.tree[path].body
                  if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
-        missing = sorted(WINDOW_DETECTOR_API - funcs)
+        missing = sorted(WINDOW_DETECTOR_API - funcs.keys())
         if missing:
             others = [o for o in DETECTORS if o != name and (PET / "brain" / o).is_file()]
             yield ContractViolation(
@@ -541,11 +595,38 @@ def rule_arch004(scanner: Scanner):
                 reference=f"{ARCH_DOC} §12",
                 key=(name, "api"),
             )
+        for func_name in sorted(WINDOW_DETECTOR_API & funcs.keys()):
+            expected = WINDOW_DETECTOR_SIGNATURES[func_name]
+            actual = _Sig.of(funcs[func_name])
+            if actual == expected:
+                continue
+            yield ContractViolation(
+                rule="ARCH004", title="Platform detector API mismatch",
+                file=f"pet/brain/{name}", line=funcs[func_name].lineno,
+                evidence=f"def {func_name}(...)",
+                violation=f"{func_name} 的调用形态与契约不符：期望 {expected.render()}，实际 {actual.render()}。",
+                why="window_detector.py 按平台用同一组调用方式分发，签名漂移会在对应平台 TypeError。",
+                fix=f"按 WINDOW_DETECTOR_SIGNATURES 对齐参数与默认值（基准：pet/brain/win_detector.py）。",
+                example="pet/brain/win_detector.py",
+                reference=f"{ARCH_DOC} §12",
+                key=(name, func_name),
+            )
 
 
 def _is_tool_panel(rel: str) -> bool:
     parts = rel.split("/")
     return len(parts) == 4 and parts[3] == "panel.py"
+
+
+# 平台后端库只属于对应的平台探测模块（精确放行表，杜绝任意 *_detector.py 误放行）
+_PLATFORM_BACKENDS = {
+    "win32gui": "pet/brain/win_detector.py",
+    "win32con": "pet/brain/win_detector.py",
+    "win32process": "pet/brain/win_detector.py",
+    "Quartz": "pet/brain/mac_detector.py",
+    "AppKit": "pet/brain/mac_detector.py",
+    "Xlib": "pet/brain/linux_detector.py",
+}
 
 
 def _heavy_allowed(rel: str, root: str) -> bool:
@@ -554,7 +635,8 @@ def _heavy_allowed(rel: str, root: str) -> bool:
         return rel.startswith("pet/ui/") or rel == ASSEMBLER or _is_tool_panel(rel)
     if root == "playwright":
         return False  # 任何位置都应延迟
-    return rel.endswith("_detector.py")  # 平台库只属于平台后端
+    allowed = _PLATFORM_BACKENDS.get(root)
+    return allowed is not None and rel == allowed  # 平台库只属于对应的平台后端
 
 
 def rule_arch005(scanner: Scanner):
@@ -598,11 +680,13 @@ def rule_arch006(scanner: Scanner):
             elif isinstance(node, ast.Attribute):
                 if not _private_name(node.attr) or node.attr.isupper():
                     continue  # 全大写真源常量（_KEY_META / _SPAWNERS）不按私有访问处理
-                if not _cross_object(node, local_classes, bindings):
+                receiver, cross = _cross_object(node, local_classes, bindings)
+                if not cross:
                     continue
                 yield _private_violation(
                     rel, node.lineno, ast.unparse(node), node.attr,
-                    "跨对象访问私有成员", (rel, node.attr))
+                    f"跨对象访问私有成员（接收者：{receiver}）",
+                    (rel, receiver, node.attr))
 
 
 def _import_bindings(tree: ast.Module, current: str, scanner: Scanner) -> dict[str, bool]:
@@ -637,18 +721,26 @@ def _private_name(name: str) -> bool:
     return name.startswith("_") and not name.startswith("__")
 
 
-def _cross_object(node: ast.Attribute, local_classes: set[str], bindings: dict[str, bool]) -> bool:
-    """接收方是否指向别的对象：self/cls、本文件定义的类与标准库模块除外。"""
+def _cross_object(node: ast.Attribute, local_classes: set[str],
+                  bindings: dict[str, bool]) -> tuple[str, bool]:
+    """返回 (接收者文本, 是否跨对象)：self/cls、本文件定义的类与标准库模块除外。
+
+    未知局部变量/参数静态扫不出类型（可能是 pet 对象，也可能是 match 这类
+    第三方对象），保守按跨对象报出；豁免键带上接收者文本，误报可精确豁免单条，
+    不会因为 (文件, 属性) 粗粒度匹配放走真实违规。
+    """
     value = node.value
     if isinstance(value, ast.Name):
         if value.id in ("self", "cls") or value.id in local_classes:
-            return False
+            return "", False
         if value.id in bindings:
-            return bindings[value.id]  # pet 模块/符号算越界，os._exit 这类标准库不算
-        return True  # 局部变量与参数
+            # pet 模块/符号算越界，os._exit 这类标准库不算
+            return value.id, bindings[value.id]
+        return value.id, True  # 局部变量与参数：类型未知，保守报出
     if isinstance(value, ast.Call):
-        return not (isinstance(value.func, ast.Name) and value.func.id == "super")
-    return isinstance(value, (ast.Attribute, ast.Subscript))  # 链式与 sys.modules[...] 形态
+        known_super = isinstance(value.func, ast.Name) and value.func.id == "super"
+        return ast.unparse(value), not known_super
+    return ast.unparse(value), isinstance(value, (ast.Attribute, ast.Subscript))  # 链式与 sys.modules[...] 形态
 
 
 def rule_arch007(scanner: Scanner):
@@ -720,22 +812,29 @@ _PURE_METHODS = {
 
 
 def _side_effect_call(node: ast.expr | None) -> ast.Call | None:
-    """表达式里第一个非良性调用；良性调用与 Lambda 体不往下钻。"""
+    """表达式里第一个非良性调用；良性调用自身放行但参数仍递归检查，Lambda 体不往下钻。"""
     if node is None or isinstance(node, ast.Lambda):
         return None
     if isinstance(node, ast.Call):
         func = node.func
         if isinstance(func, ast.Attribute) and func.attr in _PURE_METHODS:
-            return _side_effect_call(func.value)  # 方法本身纯，只看接收者
-        name = ast.unparse(func)
-        if name in _BENIGN_CALLS:
-            return None
-        tail = name.rsplit(".", 1)[-1]
-        if tail == "register" or tail.startswith("register_"):
-            return None  # 注册表登记（GAME.register(...) 等）
-        return node
+            benign = True  # 纯方法：结果只由接收者与参数决定
+        else:
+            name = ast.unparse(func)
+            tail = name.rsplit(".", 1)[-1]
+            benign = (name in _BENIGN_CALLS  # 纯函数、常量绑定
+                      or tail == "register" or tail.startswith("register_"))  # 注册表登记
+        if not benign:
+            return node
+        # 良性调用放行自身，但容器参数里的副作用仍要抓：dict(x=open(...))、list(load(...))
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, (ast.expr, ast.comprehension, ast.keyword)):
+                found = _side_effect_call(child)
+                if found is not None:
+                    return found
+        return None
     for child in ast.iter_child_nodes(node):
-        if isinstance(child, (ast.expr, ast.comprehension)):
+        if isinstance(child, (ast.expr, ast.comprehension, ast.keyword)):
             found = _side_effect_call(child)
             if found is not None:
                 return found
@@ -882,61 +981,80 @@ ALLOWLIST: dict[str, list[Debt]] = {
              "识别结果经 Qt 信号回传", f"{ARCH_DOC} §11.12、§11.15"),
     ],
     "ARCH006":
-        _sym("pet/action/action.py",
-             ["_vy", "_clamp_pos", "_cached_effective_bottom", "_standing_hwnd",
+        _sym("pet/action/action.py", "g",
+             ["_vy", "_clamp_pos", "_standing_hwnd", "_cached_effective_bottom",
               "_standing_title", "_standing_rect", "_falling", "_play_once"],
              "行走 / drive 直接读重力内部状态（§14 最大一处耦合），需给 Gravity 公开接口",
              f"{ARCH_DOC} §14")
-        + _sym("pet/action/action_queue.py", ["_anim", "_stop_drive"],
+        + _sym("pet/action/action.py", "self.gravity", ["_cached_effective_bottom"],
+               "站立判定读重力缓存底部，需给 Gravity 公开接口", f"{ARCH_DOC} §14")
+        + _sym("pet/action/action_queue.py", "self._actions", ["_anim", "_stop_drive"],
                "队列推进要读 Actions 内部动画器与驱动收尾", f"{ARCH_DOC} §14")
-        + [Debt(("pet/action/action_queue.py", "_tick"),
+        + [Debt(("pet/action/action_queue.py", "self._actions.gravity", "_tick"),
                 "动作结束前手动跑一次重力", f"{ARCH_DOC} §14; {ADR_TIMEOUT}")]
-        + [Debt(("pet/agent/pet_agent.py", "_flush_pending_summaries"),
+        + [Debt(("pet/agent/pet_agent.py", "self.behavior", "_flush_pending_summaries"),
                 "daemon 线程摘要落盘直呼私有方法", f"{ARCH_DOC} §11.14", issue=23)]
-        + _sym("pet/agent/scheduled_tasks.py",
+        + _sym("pet/agent/scheduled_tasks.py", "self._agent",
                ["_pet_window", "_thread", "_async_brain", "_autonomous_pipeline"],
                "定时任务探活与强制收尾读 agent 内部", f"{ARCH_DOC} §11.14")
-        + [Debt(("pet/agent/scheduled_tasks.py", "_cleanup_old"),
+        + [Debt(("pet/agent/scheduled_tasks.py", "self._agent.conversation_store", "_cleanup_old"),
                 "慢档清理对话历史直呼私有方法", f"{ARCH_DOC} §14")]
         + [Debt(("pet/app.py", "_LogRelay"),
                 "装配点导入 log_window 私有中继类", f"{ARCH_DOC} §11.14")]
-        + _sym("pet/app.py", ["_quit_fn", "_voice_session", "_save_context"],
+        + _sym("pet/app.py", "window", ["_quit_fn"],
                "装配点直连窗口 / 托盘 / agent 的私有字段与方法", f"{ARCH_DOC} §14")
-        + _sym("pet/app.py", ["_on_submit", "_force_close"],
+        + _sym("pet/app.py", "tray", ["_quit_fn"],
+               "装配点直连窗口 / 托盘 / agent 的私有字段与方法", f"{ARCH_DOC} §14")
+        + _sym("pet/app.py", "agent", ["_voice_session"],
+               "装配点直连窗口 / 托盘 / agent 的私有字段与方法", f"{ARCH_DOC} §14")
+        + _sym("pet/app.py", "agent.behavior", ["_save_context"],
+               "装配点直连窗口 / 托盘 / agent 的私有字段与方法", f"{ARCH_DOC} §14")
+        + _sym("pet/app.py", "chat_bubble", ["_on_submit"],
                "退出与提交路径直呼窗口私有方法与槽", f"{ARCH_DOC} §11.14")
-        + [Debt(("pet/app.py", "_instance"),
-                "读 SettingsWindow 单例私有字段", f"{ARCH_DOC} §11.14")]
-        + [Debt(("pet/app.py", "_panel"),
+        + _sym("pet/app.py", "_w", ["_force_close"],
+               "退出与提交路径直呼窗口私有方法与槽", f"{ARCH_DOC} §11.14")
+        + _sym("pet/app.py", "SettingsWindow", ["_instance"],
+               "读 SettingsWindow 单例私有字段", f"{ARCH_DOC} §11.14")
+        + [Debt(("pet/app.py", "_mod", "_panel"),
                 "经 sys.modules 越读工具面板私有全局，删除死通道时一并消除",
                 f"{ARCH_DOC} §11.14", issue=21)]
-        + _sym("pet/brain/behavior.py", ["_db_path", "_execute_one", "_normalize"],
+        + _sym("pet/brain/behavior.py", "memory_store", ["_db_path"],
                "Behavior 直驱 executor 与 memory_store 内部", f"{ARCH_DOC} §14")
-        + _sym("pet/brain/context_builder.py", ["_format_context_time", "_format_duration"],
+        + _sym("pet/brain/behavior.py", "executor", ["_execute_one", "_normalize"],
+               "Behavior 直驱 executor 与 memory_store 内部", f"{ARCH_DOC} §14")
+        + _sym("pet/brain/context_builder.py", "BrainMixin",
+               ["_format_context_time", "_format_duration"],
                "父类 BrainMixin（pet/brain/base.py）的私有静态工具被子类模块直呼",
                f"{ARCH_DOC} §11.14")
-        + _sym("pet/brain/memory.py",
+        + _sym("pet/brain/memory.py", "self._retriever",
                ["_conn", "_lock", "_effective_importance", "_format_memory_time",
                 "_demote_l2_to_l3", "_promote_by_tool_hits", "_generate_embedding",
                 "_upsert_vector"],
                "MemoryStore 直捅 _MemoryRetriever 内部（存储与检索分层不彻底）",
                f"{ARCH_DOC} §11.14")
-        + _sym("pet/tools/registry.py", ["_MemoryRetriever", "_format_memory_time"],
+        + [Debt(("pet/tools/registry.py", "_MemoryRetriever"),
+                "recall 元工具导入未公开的检索器", f"{ARCH_DOC} §11.14", issue=23)]
+        + _sym("pet/tools/registry.py", "_MemoryRetriever", ["_format_memory_time"],
                "recall 元工具复用未公开的检索器与时间格式化", f"{ARCH_DOC} §11.14", issue=23)
-        + _sym("pet/tools/todo/panel.py", ["_instance", "_storage"],
+        + [Debt(("pet/tools/todo/panel.py", "_instance"),
+                "面板导入工具主体私有单例（§14 登记的环）", f"{ARCH_DOC} §14", issue=21)]
+        + _sym("pet/tools/todo/panel.py", "self._core", ["_storage"],
                "面板与工具主体互相引用（§14 登记的环）", f"{ARCH_DOC} §14", issue=21)
-        + _sym("pet/tools/__init__.py", ["_tools"],
+        + _sym("pet/tools/__init__.py", "TOOL_REGISTRY", ["_tools"],
                "工具加载器读 TOOL_REGISTRY._tools", f"{ARCH_DOC} §14")
-        + _sym("pet/ui/pet_window.py", ["_tools"],
+        + _sym("pet/ui/pet_window.py", "TOOL_REGISTRY", ["_tools"],
                "宠物窗口读 TOOL_REGISTRY._tools", f"{ARCH_DOC} §14")
-        + _sym("pet/ui/debug_window.py", ["_context", "_score_entry"],
+        + _sym("pet/ui/debug_window.py", "self.agent.behavior", ["_context", "_score_entry"],
                "调试面板读 Behavior 内部上下文与打分", f"{ARCH_DOC} §14")
-        + _sym("pet/ui/log_window.py", ["_append_log"],
+        + _sym("pet/ui/log_window.py", "widget", ["_append_log"],
                "日志中继直呼窗口私有方法", f"{ARCH_DOC} §11.14")
-        + _sym("pet/ui/music_bubble.py", ["_speech_queue", "_is_active"],
+        + _sym("pet/ui/log_window.py", "self._widget", ["_append_log"],
+               "日志中继直呼窗口私有方法", f"{ARCH_DOC} §11.14")
+        + _sym("pet/ui/music_bubble.py", "speech_bubble", ["_speech_queue", "_is_active"],
                "音乐气泡抢占语音气泡的队列", f"{ARCH_DOC} §14")
-        + _sym("pet/ui/settings_window.py", ["_load_values"],
+        + _sym("pet/ui/settings_window.py", "cls._instance", ["_load_values"],
                "外部要求单例窗口重载配置，直呼私有方法", f"{ARCH_DOC} §11.14")
-        + _sym("pet/ui/system_tray.py", ["_agent", "_mouse_penetration"],
+        + _sym("pet/ui/system_tray.py", "self.pet", ["_agent", "_mouse_penetration"],
                "托盘直读宠物窗口内部状态", f"{ARCH_DOC} §11.14"),
     "ARCH007": [],
     "ARCH008": [
@@ -953,6 +1071,9 @@ ALLOWLIST: dict[str, list[Debt]] = {
         Debt(("pet/action/registry.py", "REGISTRY: dict[str, ActionDef]"),
              "动作表在导入期构建，generate_action_section 每次调用会重建，可改惰性",
              f"{ARCH_DOC} §11.12"),
+        Debt(("pet/action/registry.py", "ACTION_NAMES: list[str]"),
+             "动作名列表在导入期从 REGISTRY 派生，随 REGISTRY 惰性化一并消除",
+             f"{ARCH_DOC} §11.12"),
         Debt(("pet/brain/linux_detector.py", "_dpy_lock"),
              "X11 显示连接的模块级 RLock", f"{ARCH_DOC} §11.12"),
         Debt(("pet/brain/memory.py", "_MEMORY_STORE_LOCK"),
@@ -966,6 +1087,9 @@ ALLOWLIST: dict[str, list[Debt]] = {
              "Config 单例（§9 登记的装配模式），构造无副作用", f"{ARCH_DOC} §11.12; {ADR_LAYERING}"),
         Debt(("pet/food/food.py", "FOOD"),
              "FoodManager 单例（QObject，装配在 pet/app.py）", f"{ARCH_DOC} §11.12; {ADR_LAYERING}"),
+        Debt(("pet/game/__init__.py", "GAME.register"),
+             "包 __init__ 在导入期实例化四个游戏对象并登记，应移进装配入口（pet/app.py）",
+             f"{ARCH_DOC} §11.12"),
         Debt(("pet/game/gamebase.py", "GAME"),
              "GameBase 单例（§9 登记的装配模式），构造无副作用", f"{ARCH_DOC} §11.12; {ADR_LAYERING}"),
         Debt(("pet/pulse/mood.py", "_DB_PATH"),
@@ -991,6 +1115,9 @@ ALLOWLIST: dict[str, list[Debt]] = {
              "todo 导入期初始化失败的日志，随 _instance 一并消除", f"{ARCH_DOC} §11.12", issue=21),
         Debt(("pet/tools/web_search/core.py", "logging.getLogger"),
              "导入期调低 trafilatura 日志级别（改全局状态）", f"{ARCH_DOC} §11.12"),
+        Debt(("pet/ui/emotion.py", "VALID_EMOTIONS"),
+             "从常量表 EMOTION_MAP 派生的合法表情集合（无外部副作用），可改字面量 set 消除",
+             f"{ARCH_DOC} §11.12"),
         Debt(("pet/ui/system_tray.py", "_PROCESS"),
              "导入期创建 psutil.Process 句柄", f"{ARCH_DOC} §11.12"),
         Debt(("pet/version_check.py", "_ssl_ctx"),

@@ -44,6 +44,11 @@ def name_of(emoji: str) -> str:
     return FOOD_NAMES.get(emoji, "食物")
 
 
+def _side_text(direction: str) -> str:
+    """方向 → 中文侧词；Action 参数仍用 left/right。"""
+    return "右侧" if direction == "right" else "左侧"
+
+
 class FoodManager(QObject):
     """生成 / 过期 / 到达判定 / 进食交互触发。"""
 
@@ -230,7 +235,7 @@ class FoodManager(QObject):
             self.spawn_ui_requested.emit(food_id, emoji, x, y)
 
             return {
-                "summary": f"已生成{name}，在你{direction}侧 {dx}px，{height_hint}",
+                "summary": f"已生成{name}，在你{_side_text(direction)} {dx}px，{height_hint}",
                 "success": True,
                 "food_id": food_id,
                 "food_type": name,
@@ -262,9 +267,22 @@ class FoodManager(QObject):
             expired = elapsed > f["ttl"]
             remaining = max(0, int(f["ttl"] - elapsed))
             arrived = self._arrived(self._pet_x, self._pet_y, f["x"], f["y"])
+            if expired:
+                summary = (f"{f['name']}已经过期，即将自动消失。"
+                           f"不用再过去吃；想吃就调用 food__spawn 重新生成，否则直接输出最终回复即可。")
+            elif arrived:
+                summary = (f"{f['name']}已经在你身边（到达进食范围）。"
+                           f"无需再移动，直接输出最终回复即可，会自动开吃。")
+            else:
+                jump = ""
+                if bounce_height > 0:
+                    jump = f"；需要跳起来时用 Action: bounce {direction} 水平距离 高度 {bounce_height}"
+                summary = (f"{f['name']}在你{_side_text(direction)} {dx}px，{height_hint}，{remaining}秒后过期。"
+                           f"下一步输出最终回复即可，其中带上移动 Action 靠近它："
+                           f"Action: walk {direction} 水平距离（500-1000 之间取值）{jump}；"
+                           f"到达后自动开吃，不必再调用本工具。")
             return {
-                "summary": f"{f['name']}在你{direction}侧 {dx}px，{height_hint}，"
-                           f"{'已经到达可以吃了' if arrived else '还没到，继续走'}，{remaining}秒后过期",
+                "summary": summary,
                 "success": True,
                 "has_food": True,
                 "food_id": f["id"],

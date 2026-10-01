@@ -12,6 +12,8 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 
+from pet.tools.knowledge.storage import KnowledgeStorage
+
 logger = logging.getLogger(__name__)
 
 _W = 600
@@ -381,7 +383,7 @@ class KnowledgePanel(QWidget):
         return None
 
 
-def show_panel(storage) -> None:
+def show_panel(storage: KnowledgeStorage) -> None:
     """显示管理面板（模块内单例）：已关闭的重建，存活的置顶。"""
     global _current
     if _current is not None:

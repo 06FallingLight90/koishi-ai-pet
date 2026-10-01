@@ -82,8 +82,11 @@ class TestLightweightImports:
             "assert 'PySide6' not in sys.modules, sorted(\n"
             "    m for m in sys.modules if m.startswith('PySide6'))\n"
         )
-        proc = subprocess.run([sys.executable, "-c", code],
-                              capture_output=True, text=True, timeout=60)
+        try:
+            proc = subprocess.run([sys.executable, "-c", code],
+                                  capture_output=True, text=True, timeout=60)
+        except subprocess.TimeoutExpired:
+            pytest.fail(f"模块 {module} 导入超时（60s）")
         assert proc.returncode == 0, proc.stderr
 
 

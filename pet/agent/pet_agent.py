@@ -13,7 +13,7 @@ from pet.agent.state import StateMachine, PetState
 from pet.agent.screen_reader import ScreenReader
 from pet.brain.memory import get_memory_store
 from pet.brain.conversation_store import ConversationStore
-from pet.action.registry import default_duration, _DURATION_ACTION_DEFS
+from pet.action.registry import default_duration, has_duration
 from pet.pulse.vitals import Vitals
 from pet.pulse.mood import Mood
 
@@ -200,7 +200,7 @@ class PetAgent(QObject):
     def _emit_action(self, name: str, args, kwargs):
         kw = dict(kwargs) if kwargs else {}
         arg_list = list(args or ())
-        if name in _DURATION_ACTION_DEFS:
+        if has_duration(name):
             if arg_list and isinstance(arg_list[0], int):
                 kw["duration"] = arg_list.pop(0)
             else:
@@ -599,7 +599,7 @@ class PetAgent(QObject):
                 logger.warning(f"[PetAgent] vitals_deltas update failed: {e}")
         logger.info(f"[{ts}] [PetAgent] === call complete ===")
         self.behavior.reset_active_tool_groups()
-        threading.Thread(target=self.behavior._flush_pending_summaries, daemon=True).start()
+        threading.Thread(target=self.behavior.flush_summaries, daemon=True).start()
 
     def _save_memory_line(self, line: str):
         """后台线程保存记忆（含 embedding 网络调用）。"""

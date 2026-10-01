@@ -354,12 +354,13 @@ class ToolRegistry:
     @staticmethod
     def _format_recall_memory(row: dict) -> dict:
         """将记忆行精简为 LLM 可读字段。"""
-        from pet.brain.memory import _MemoryRetriever
+        # 模块级导入会经 pet.brain.__init__ → behavior 回指本模块成环，保持函数内导入
+        from pet.brain.memory import get_memory_store
         return {
             "content": row.get("content", ""),
             "level": row.get("level", "L2"),
             "importance": row.get("importance", 3),
-            "time": _MemoryRetriever._format_memory_time(row.get("created_at", "")),
+            "time": get_memory_store().format_memory_time(row.get("created_at", "")),
         }
 
     def _recall_search(self, query: str, limit: int = 5) -> dict:

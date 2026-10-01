@@ -2,7 +2,7 @@
 
 本文是理解这个项目的入口：进程与线程怎么组织、一次决策从头到尾经过哪些环节、哪些文件负责什么。
 
-- 本文**手写**，事实以代码为准；函数名与结构变化时请一并更新这里。
+- 本文**手写**，事实以代码为准；函数名与结构变化时需同步更新这里。
 - 机械展开的参考表由脚本生成，见 [reference/](reference/)（配置项 / 动作 / 工具 / 粒子特效 / 提示词块 / 模块清单）。
 - 术语（vitals、mood、needs、outcome、aside…）见 [glossary.md](glossary.md)。
 - 子系统深入见 [subsystems/](subsystems/)：记忆、数值、动作动画、提示词、素材规格。
@@ -47,7 +47,7 @@ flowchart TB
 
 分层的边界是：`ui` 只管画与点，`agent` 管编排，`brain` 管与模型交互与记忆，`action` 管动作执行，
 `pulse` 管数值，`tools` 是被 LLM 调用的外部能力。另有三个**外围模块**：`food`（觅食玩法）、
-`game`（小游戏）、`voice`（语音输入）——它们只依赖 `config` 与 `tools.context`，要让桌宠说话、记一笔
+`game`（小游戏）、`voice`（语音输入） - 它们只依赖 `config` 与 `tools.context`，要让桌宠说话、记一笔
 或弹面板时一律走 `TOOL_CTX` 或注入回调，**不得**直接 import `ui` / `agent`（依赖方向见 §11.13）。
 
 贯穿全项目的几条取向，改动时可以拿它们当尺子：
@@ -82,7 +82,7 @@ flowchart TB
 
 - **脑线程单例**：`PetAgent._async_brain()` 在启动新线程前会取消并「退休」旧线程；`_retire()`
   绝不析构仍在运行的 QThread，只是持引用等它自己结束，避免 Qt 崩溃。
-- **抢不到就让路**：流式决策要抢 `Behavior` 内部的一把 `RLock`，同一时刻只允许一条管线真正
+- **抢锁失败即降级**：流式决策要抢 `Behavior` 内部的一把 `RLock`，同一时刻只允许一条管线真正
   跑 LLM。autonomous / interact 抢不到锁就降级本地兜底（`_decide_local`），chat 抢不到直接
   回一句固定台词加 `look_around`，都不排队；非流式路径不抢锁。
 - **数值只在主线程改**：`vitals`/`mood` 的修改与落库都发生在主线程（定时器回调或 `_on_brain_result`），
@@ -115,7 +115,7 @@ flowchart TB
    `build_interact`，内部按「静态块 + 运行时块 + 记忆」拼装，详见第 5 节。
 3. **LLM 调用**：`pet/brain/behavior.py` 的流式路径 `*_decide_stream`（首选）与非流式 `*_decide`（回退）。
    客户端 `pet/brain/llm_client.py` 维护首选/备选两套方案，重试与降级策略在 `pet/brain/llm_retry.py`。
-4. **输出解析**：按行前缀分派 —— `Summary` / `Speech` / `Action` / `Memory` / `Emotion` / `Mood` / `Vitals`
+4. **输出解析**：按行前缀分派 - `Summary` / `Speech` / `Action` / `Memory` / `Emotion` / `Mood` / `Vitals`
    （流式与非流式两套解析器，聚合为 `BehaviorOutput`）。非流式解析器在没有 Action 时兜底
    `sit 5s`，流式路径没有这个兜底。
 5. **工具轮次**：`_handle_tool_calls()` 循环执行 LLM 请求的工具，最多 `LLM_TOOL_MAX_ROUNDS` 轮；
@@ -131,10 +131,10 @@ flowchart TB
 
 system prompt 由三段拼起来：
 
-1. **静态块**：`pet/brain/prompts.py` 的 `build_system_prompt(mode, task)`
-   —— 身份、独立生活设定、输入可信度、人格、称呼、表达底线、记忆格式、感知段（含动作表）、任务段。
-2. **运行时块**：`context_builder._build_system()` 生成后替换 `<<FEELING>>` 锚点
-   —— `[你现在的状态]`、`[你惦记着的事]`、`[最近发生了什么]`。
+1. **静态块**：`pet/brain/prompts.py` 的 `build_system_prompt(mode, task)` 生成：身份、独立生活设定、
+   输入可信度、人格、称呼、表达底线、记忆格式、感知段（含动作表）、任务段。
+2. **运行时块**：`context_builder._build_system()` 生成后替换 `<<FEELING>>` 锚点：
+   `[你现在的状态]`、`[你惦记着的事]`、`[最近发生了什么]`。
    锚点排在感知段与任务段之后，运行时块因此落在静态前缀末尾，不破坏前缀缓存。
 3. **记忆检索**：`[你对用户的记忆]`，由 `pet/brain/memory.py` 的召回策略给出。
 
@@ -235,7 +235,7 @@ system prompt 由三段拼起来：
 | `%APPDATA%/KoishiAI/settings.json` | 用户配置（macOS/Linux 见 `pet/settings.py`） | 与默认值合并；`settings-schema.json` 是给外部编辑器的 schema |
 | `<项目根>/pet.db` | SQLite：`vitals`、`mood`、`context_entries`、`context_meta`、`chat_history`、记忆相关表 | 连接参数统一在 `pet/db.py`（WAL、busy_timeout） |
 | `pet/tools/<tool>/config.json` | 工具私有配置 | 首次运行时由 `config.example.json` 复制生成 |
-| `logs/` | `koishiai.log`（按天轮转 3 份）、`crash/`（崩溃报告）、`startup.state` | 排查问题先看这里 |
+| `logs/` | `koishiai.log`（按天轮转 3 份）、`crash/`（崩溃报告）、`startup.state` | 排障的第一入口 |
 | `KoishiAI.lock` | 单实例锁（与 settings.json 同目录） | 异常残留时可手删 |
 
 更新流程（`update.sh` / `update.bat`）从 GitHub Release 下载源码包同步覆盖，
@@ -302,7 +302,7 @@ system prompt 由三段拼起来：
 
 ## 12. 常见改动入口
 
-| 想做什么 | 改哪里 | 别忘了 |
+| 改动目标 | 改哪里 | 连带步骤 |
 |---|---|---|
 | 加一个动作 | 放素材 `assets/actions/<name>/`，在 `pet/action/registry.py` 注册 | 带时长的动作要进 `_DURATION_ACTION_DEFS`；重生成 [reference/actions.md](reference/actions.md) |
 | 加一个粒子特效 | `pet/ui/particle.py` 的 `_SPAWNERS` 与 `_DEFAULT_Y` | 调试面板自动列出；重生成 [reference/effects.md](reference/effects.md) |
@@ -316,10 +316,10 @@ system prompt 由三段拼起来：
 
 ## 13. 已知遗留与陷阱
 
-下面几处看起来像 bug，其实是历史包袱，改之前先确认：
+下面几处看起来像 bug，其实是历史包袱，改动前值得确认：
 
-- `update.sh` / `update.bat` 的排除清单里有 `config.json`，但运行时代码不读项目根目录的 `config.json`
-  ——用户配置在 `%APPDATA%/KoishiAI/settings.json`，这一条是历史遗留。
+- `update.sh` / `update.bat` 的排除清单里有 `config.json`，但运行时代码不读项目根目录的 `config.json`，
+  用户配置在 `%APPDATA%/KoishiAI/settings.json`，这一条是历史遗留。
 - `_KEY_META` 的 `placeholder` 字段没有任何读取点，设置界面的占位符是界面里硬编码的。
 - `QThreadPool` 在 `pet/agent/pet_agent.py` 被 import 但未使用；并发用的是单条 QThread + 少量 daemon 线程。
 - 数值阈值信号（饿、累、理智低等）大多没有消费者，它们对模型的影响全靠「感受 → 提示词」这条路；
@@ -331,7 +331,7 @@ system prompt 由三段拼起来：
 
 | 环 | 性质 | 现状与出路 |
 |---|---|---|
-| `pet.brain` → `behavior` → `context_builder` → `pet.brain` | 唯一的**真实顶层环** | `context_builder.py` 写的是 `from pet.brain import prompts`，绕回包 `__init__`；靠 Python「from 包 import 子模块」的兜底才没炸。改成 `from pet.brain.prompts import ...` 就能断开 |
+| `pet.brain` → `behavior` → `context_builder` → `pet.brain` | 唯一的**真实顶层环** | `context_builder.py` 写的是 `from pet.brain import prompts`，绕回包 `__init__`；靠 Python「from 包 import 子模块」的兜底才未报错。改成 `from pet.brain.prompts import ...` 就能断开 |
 | `pet.tools.todo` ↔ `pet.tools.todo.panel` | 设计层面，靠函数内延迟 import 规避 | 面板与工具主体互相引用，出路是把共享状态抽到第三个模块 |
 
 这两处环是已登记的债；`pet.tools.todo` ↔ `panel` 靠 `ARCH006` 盯着（面板模块级回指包的
@@ -339,8 +339,8 @@ system prompt 由三段拼起来：
 与全部既有债见 `tests/test_architecture_contracts.py` 的 allowlist（§11「哪些红线已经由测试守住」）。
 
 其余函数内 import 大多正当（见 §11 第 15 条）；也有随手写的，比如
-`pet_agent.recover_stuck_brain()` 里的 `from pet.agent.state import PetState`——同一个模块在文件头
-已经导入过了。新代码别照抄这种。
+`pet_agent.recover_stuck_brain()` 里的 `from pet.agent.state import PetState` - 同一个模块在文件头
+已经导入过了。新代码不沿用这种写法。
 
 ### `Behavior` 的职责
 
@@ -356,7 +356,7 @@ LLM 客户端与重试管理、流式与非流式调用、两套输出解析、�
 
 | 位置 | 访问了什么 |
 |---|---|
-| `pet/action/action.py`（46 处、8 个符号） | `gravity._vy` / `_clamp_pos()` / `_cached_effective_bottom` / `_standing_hwnd` 等——行走与 drive 直接读重力内部状态，是最大的一处耦合 |
+| `pet/action/action.py`（46 处、8 个符号） | `gravity._vy` / `_clamp_pos()` / `_cached_effective_bottom` / `_standing_hwnd` 等 - 行走与 drive 直接读重力内部状态，是最大的一处耦合 |
 | `pet/app.py` | `agent._voice_session`、`agent.behavior._save_context()`、`window._quit_fn`、`tray._quit_fn` |
 | `pet/brain/behavior.py` | `executor._execute_one()`、`executor._normalize()`、`memory_store._db_path` |
 | `pet/brain/context_builder.py` | `brain._MAX_POOL_ENTRIES`：注入条数上限由池子的拥有者决定，只读派生值，不涉及可变状态 |
@@ -367,10 +367,10 @@ LLM 客户端与重试管理、流式与非流式调用、两套输出解析、�
 | `pet/ui/pet_window.py`、`pet/tools/registry.py` | `TOOL_REGISTRY._tools` |
 
 `context_builder.py` 里的 11 处 `ContextBuilder._XXX` 是访问自己类的常量，不算越界。
-清单之外的私有访问，改到时顺手给个公开方法（或把协作提到调用方）。
+清单之外的私有访问在改动时收敛为公开方法（或把协作提到调用方）。
 
 「跨对象私有访问」不只 `obj._attr` 一种写法：`from pet.x.y import _Private`（导入私有类/常量）与
-`sys.modules["pet.x"]._panel`（绕过 import 直接取私有模块属性）同样算，检查或评审时不要漏。
+`sys.modules["pet.x"]._panel`（绕过 import 直接取私有模块属性）同样计入，契约检查与评审都覆盖这两种写法。
 
 全量冻结清单（逐符号落到「文件 + 属性名」）在 `tests/test_architecture_contracts.py` 的
 allowlist 里，每条带原因与文档依据，比上表多出的部分是扫描时新登记的；还清一笔就在同一次改动里

@@ -26,7 +26,7 @@
 
 索引有两处细节：`idx_l3_access` 是 `(level, last_accessed_at) WHERE level='L3'` 的部分索引，
 专门加速 L3 过期清理；而注释写的「复合索引」`idx_level_importance` 实际只有 `importance` 一列，
-与 `idx_importance` 重复，别照注释推断查询计划。
+与 `idx_importance` 重复，查询计划以实际建表语句为准。
 
 向量表 `memories_vec`（sqlite-vec 虚拟表）：`memory_id` + `embedding FLOAT[EMBEDDING_DIM] distance_metric=cosine`。
 距离度量默认是 L2，所以代码启动时会检查、必要时 `DROP TABLE` 重建；维度不符也重建，并把
@@ -61,7 +61,7 @@
    **在锁外**进行，失败就降级关键词检索。
 6. **收尾**：每次保存后跑一次容量控制 `enforce_capacity()`。
 
-> 两个 0.6 量纲不同：`dedup_threshold` 是**文本相似度**，`EMBEDDING_DEDUP_THRESHOLD` 是**向量距离**。别混。
+> 两个 0.6 量纲不同：`dedup_threshold` 是**文本相似度**，`EMBEDDING_DEDUP_THRESHOLD` 是**向量距离**，两者不可混用。
 
 ## 3. 召回：`retrieve_context`
 
@@ -74,8 +74,8 @@
 | 相关性 | 候选池按查询词检索后做 MMR | λ = 0.7：`0.7 × 相关性 − 0.3 × 与已选的最大相似度` |
 
 - **有效分（effective importance）**：`min(5, importance × decay × recency_factor)`；
-  `decay = 0.5 ** (age_days / 半衰期)`；`recency_factor = 1 + 0.5 × 0.5**(age_days(last_accessed)/0.5)`
-  —— 即最近访问过的记忆最多 +50% 加成，且**不随次数累积**。
+  `decay = 0.5 ** (age_days / 半衰期)`；`recency_factor = 1 + 0.5 × 0.5**(age_days(last_accessed)/0.5)`，
+  即最近访问过的记忆最多 +50% 加成，且**不随次数累积**。
 - **冗余抑制**：核心槽内相似度 ≥ 0.45 的重复只占一个座位；被抑制的 id 会下推给近期槽的 SQL
   （`NOT IN`）与 MMR 过滤，**避免它们被 touch**。
 - **向量不可用时的降级链**：初始化失败（开关关、URL/KEY/模型空、sqlite-vec 加载失败）→ 关键词检索；
@@ -93,7 +93,7 @@
 - `access_count` / `last_accessed_at` **只由 `touch` 更新**，而 `touch` 只对真正入选的行调用。
 
 `MemoryStore.random_events()`（供「你惦记着的事」随机注入旧事）只读不 touch：
-一旦 touch，随机抽中的记忆会凭 `recency_factor` 白拿 1.5 倍加成挤进核心槽，形成
+一旦 touch，随机抽中的记忆会凭 `recency_factor` 多出 1.5 倍加成并进入核心槽，形成
 「随机→加成→更常被选」的自我强化；同时 `access_count` 被污染还会影响 L3→L2 晋升与容量淘汰。
 这条行为有测试锁定（注入后 `access_count == 0`）。
 
@@ -143,24 +143,24 @@ sqlite3 pet.db "SELECT id, category, level, importance, access_count, substr(con
 
 `memories_vec` 是 sqlite-vec 虚拟表，需要加载扩展才能查，CLI 里通常查不了。
 
-## 6. 不变量与坑
+## 6. 不变量与陷阱
 
-改记忆系统前请确认这几条：
+改动记忆系统时的前提：
 
-1. **别给 `random_events` 加 `touch`**（见 §3），有测试锁定。
+1. **`random_events` 不加 `touch`**（见 §3），有测试锁定。
 2. **`has_embedding` 是「向量与正文一致」的标志位**：任何修改 `content` 的代码路径都要同步维护它，
    否则检索会用旧向量。管理窗口的 `update_memory` 就是这么做的（改正文才重算向量，失败则置 0）。
 3. **管理窗口不做一致性校验**：`update_memory` 没有 clamp，可以造出 `L3 + importance=5` 这类组合，
-   而维护逻辑假设 L3 最高 4；另一方面它**每次保存都会写 `last_accessed_at`**，等于白送一次 +50% 加成。
+   而维护逻辑假设 L3 最高 4；另一方面它**每次保存都会写 `last_accessed_at`**，等于额外获得一次 +50% 加成。
 4. **被抑制的 id 必须在 SQL 端排除**：`suppressed` / `exclude_ids` 的下推是为了让它们不被 `touch`，
    挪回 Python 端过滤会改变有效分排序。
 5. **schema 演进靠 PRAGMA 增量迁移**：加列必须写迁移，否则老库直接报错；level 迁移会把
    `importance<=2` 的行刷成 L3（老库没有 L1）。
-6. **改 `EMBEDDING_DIM` 或换模型会废弃全部旧向量**，且**没有存量回填逻辑**——旧记忆此后只能被关键词命中，
+6. **改 `EMBEDDING_DIM` 或换模型会废弃全部旧向量**，且**没有存量回填逻辑** - 旧记忆此后只能被关键词命中，
    除非它的内容被再次编辑或合并。
 7. **召回参数很敏感**：MMR λ=0.7、核心槽门槛 3.5、冗余阈值 0.45、近期窗口 24 小时、候选池 `max(n+3, 8)`、
-   3:2:5 配额、三个重排权重——改动前先想清楚对「视角是否坍缩」的影响。
-8. `tool_hits` 是**近期热度**（每轮 ×0.9、`CAST AS INTEGER`，1 会直接归零），不要当历史累计理解。
+   3:2:5 配额、三个重排权重，改动前需评估对「召回视角是否变窄」的影响。
+8. `tool_hits` 是**近期热度**（每轮 ×0.9、`CAST AS INTEGER`，1 会直接归零），不是历史累计值。
 9. 冷却与拦截记录是进程内存态，重启即清空：「刚召回的记忆重启后又被重存」是预期行为。
 
 相关测试：`tests/test_memory.py`（半衰期、解析规则、去重器、`random_events` 不 touch）、

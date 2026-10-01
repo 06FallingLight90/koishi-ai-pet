@@ -1,11 +1,12 @@
 """文档一致性测试。
 
-守住五件事：
+守住六件事：
 1. `docs/reference/*.md` 与代码一致（漂移就红，并提示跑 scripts/gen_docs.py）
 2. `docs/architecture.md` 覆盖全部包与顶层模块（新增包不能没有归属）
 3. 文档里的相对链接都指向真实存在的文件
 4. 每一页文档都在 `docs/README.md` 里被索引、每条 ADR 都在 `docs/decisions/README.md` 里登记
 5. 仓库文档没有被 .gitignore 静默忽略（历史草稿除外）
+6. 手写文档的文风符合 `docs/README.md` 的「文风约定」（无人称、无破折号）
 
 CHANGELOG 不做校验：最新 tag 之后的提交随时在变，放进测试会逼着每个提交都重新生成一次。
 """
@@ -28,6 +29,18 @@ LINK_CHECKED = (ROOT / "README.md", ROOT / "CONTRIBUTING.md", ROOT / "CHANGELOG.
 
 # 允许被忽略的历史本地草稿（其余文档必须进版本库）
 IGNORED_DRAFTS = ("docs/plan.md", "docs/iat_ws_python3.py")
+
+# 文风检查：只查手写文档（生成物由代码决定，改代码重新生成即可）
+STYLE_CHECKED = (ROOT / "README.md", ROOT / "CONTRIBUTING.md",
+                 ROOT / ".github" / "PULL_REQUEST_TEMPLATE.md")
+
+# 提示词章节名等被引用的术语，其中的第二人称按原文保留
+SECOND_PERSON_TERMS = ("你惦记着的事", "你现在的状态", "你对用户的记忆", "你的人格")
+
+# 「你」这种被引用为示例的字（含引号包裹）不算第二人称
+SECOND_PERSON = re.compile(r"(?<![「『《])(你|您)(?![」』》])")
+DASHES = ("—", "–")
+_FENCE = re.compile(r"^```.*?^```", re.DOTALL | re.MULTILINE)
 
 
 def _is_draft(rel: str) -> bool:
@@ -105,6 +118,29 @@ def test_doc_relative_links_resolve():
             if not (doc.parent / target).exists():
                 broken.append(f"{doc.relative_to(ROOT).as_posix()} → {target}")
     assert not broken, "文档中存在失效链接：" + "、".join(broken)
+
+
+def test_handwritten_docs_style():
+    """手写文档的文风：无人称、破折号统一为「空格-连字符-空格」。
+
+    只覆盖能机械判定的两条（约定见 docs/README.md 的「文风约定」），
+    陈述句与标题名词化仍靠评审。
+    """
+    problems = []
+    for path in sorted(DOCS.rglob("*.md")) + list(STYLE_CHECKED):
+        rel = path.relative_to(ROOT).as_posix()
+        if rel.startswith("docs/reference/") or _is_draft(rel):
+            continue
+        # 行内代码与代码块里的破折号是内容本身（含本文档举的反例），不参与检查
+        text = re.sub(r"`[^`]*`", "", _FENCE.sub("", path.read_text(encoding="utf-8")))
+        for term in SECOND_PERSON_TERMS:
+            text = text.replace(term, "")
+        for lineno, line in enumerate(text.splitlines(), start=1):
+            if any(dash in line for dash in DASHES):
+                problems.append(f"{rel}:{lineno} 破折号改用「空格-连字符-空格」：{line.strip()[:40]}")
+            if SECOND_PERSON.search(line):
+                problems.append(f"{rel}:{lineno} 第二人称改写为无人称陈述：{line.strip()[:40]}")
+    assert not problems, "手写文档文风不符合约定：\n" + "\n".join(problems)
 
 
 def test_docs_are_not_gitignored():

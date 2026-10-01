@@ -57,19 +57,19 @@
 | `pet/settings.py` | 用户设置持久化 — JSON 文件读写。 | `settings_path()` `load_user_settings()` `save_user_setting()` `delete_user_settings()` |
 | `pet/single_instance.py` | 单实例限制 — 防止桌宠被重复启动导致状态/数据库冲突。 | `SingleInstanceGuard` |
 | `pet/tools/__init__.py` | 工具加载器 — 自动发现 + 自动安装依赖 + 配置选择性加载。 | `load_tools()` |
-| `pet/tools/browser/__init__.py` | — | `register()` |
+| `pet/tools/browser/__init__.py` | （模块未提供 docstring） | `register()` |
 | `pet/tools/browser/core.py` | 浏览器工具：每次调用冷启动 Chromium，用完即关。 | `BrowserTool` |
 | `pet/tools/context.py` | 工具上下文 — 暴露宠物能力供工具主动调用。 | `ToolContext` |
 | `pet/tools/executor.py` | 工具执行器 — 解析 LLM 输出中的 Tool JSON，路由执行，返回结果。 | `ToolCall` `ToolResult` `ToolExecutor` |
-| `pet/tools/file_ops/__init__.py` | — | `register()` |
-| `pet/tools/file_ops/core.py` | — | `FileOpsTool` |
+| `pet/tools/file_ops/__init__.py` | （模块未提供 docstring） | `register()` |
+| `pet/tools/file_ops/core.py` | （模块未提供 docstring） | `FileOpsTool` |
 | `pet/tools/knowledge/__init__.py` | knowledge 工具 — 轻量 RAG 知识库。只读检索，写入/删除仅限面板操作。 | `register()` |
 | `pet/tools/knowledge/chunker.py` | 轻量文本分块器 — 按段落 + 字数窗口切分。 | `chunk_text()` |
 | `pet/tools/knowledge/panel.py` | 知识库管理面板 — 添加、导入文件、搜索、删除。 | `KnowledgePanel` |
 | `pet/tools/knowledge/storage.py` | 知识库存储层 — SQLite + sqlite-vec 向量检索。 | `KnowledgeStorage` |
 | `pet/tools/registry.py` | 工具注册表 — 自动发现、注册、描述可用工具。 | `ToolMethod` `ToolDef` `ToolRegistry` |
-| `pet/tools/system_monitor/__init__.py` | — | `register()` |
-| `pet/tools/system_monitor/core.py` | — | `get_overview()` `get_top_processes()` `get_memory_detail()` `get_network()` |
+| `pet/tools/system_monitor/__init__.py` | （模块未提供 docstring） | `register()` |
+| `pet/tools/system_monitor/core.py` | （模块未提供 docstring） | `get_overview()` `get_top_processes()` `get_memory_detail()` `get_network()` |
 | `pet/tools/timer/__init__.py` | timer 工具 — 倒计时定时器，到时间宠物主动提醒。支持持久化重启后恢复。 | `register()` |
 | `pet/tools/timer/core.py` | 定时器核心 — 基于 Scheduler 的倒计时提醒，重启后可恢复。 | `TimerTool` |
 | `pet/tools/timer/storage.py` | 定时器持久化 — SQLite 存储，重启后可恢复未完成的定时器。 | `TimerStorage` |
@@ -77,13 +77,13 @@
 | `pet/tools/todo/core.py` | TodoList 核心处理逻辑 — LLM 可见方法实现。 | `TodoListTool` |
 | `pet/tools/todo/panel.py` | Todo 管理面板 | `TodoPanel` |
 | `pet/tools/todo/storage.py` | Todo 持久化存储 — SQLite 数据层。 | `TodoStorage` |
-| `pet/tools/todo/style.py` | — |  |
-| `pet/tools/weather/__init__.py` | — | `register()` |
+| `pet/tools/todo/style.py` | （模块未提供 docstring） |  |
+| `pet/tools/weather/__init__.py` | （模块未提供 docstring） | `register()` |
 | `pet/tools/weather/core.py` | 通过 Open-Meteo 免费 API 获取实时天气和预报。 | `get_current()` `get_forecast()` |
 | `pet/tools/web_search/__init__.py` | 支持 SearXNG（自建）和 Bing Web Search API。 | `register()` |
 | `pet/tools/web_search/core.py` | 支持 SearXNG（自建）和 Bing Web Search API 两种后端。 | `check_connectivity()` `search()` `deep_search()` |
 | `pet/ui/__init__.py` | UI 层 — pet_window 宠物主窗口，speech_bubble/chat_bubble/feed_bubble 气泡组件，emotion 表情系统，particle 粒子特效， |  |
-| `pet/ui/base_window.py` | — | `TransparentWindow` |
+| `pet/ui/base_window.py` | （模块未提供 docstring） | `TransparentWindow` |
 | `pet/ui/chat_bubble.py` | 桌宠聊天交互组件 | `ChatBubble` |
 | `pet/ui/chat_history.py` | 对话历史窗口 — 以对话气泡形式展示用户与桌宠的对话记录。 | `ChatBubbleDelegate` `ChatHistoryWindow` |
 | `pet/ui/debug_window.py` | 调试面板 | `DebugWindow` |
@@ -101,7 +101,7 @@
 | `pet/ui/settings_window.py` | 设置界面 — 用户配置的图形界面。 | `_LLMTestWorker` `_EmbeddingTestWorker` `_ModelsFetchWorker` `_VoiceTestWorker` `MarkdownEdit` `SettingsWindow` |
 | `pet/ui/speech_bubble.py` | 桌宠对话气泡 | `SpeechBubble` |
 | `pet/ui/styles.py` | QSS 样式库 —— 扁平化圆角风格。 | `make_title_button()` `make_minimize_button()` `make_close_button()` `ensure_taskbar_icon()` |
-| `pet/ui/system_tray.py` | — | `SystemTrayManager` |
+| `pet/ui/system_tray.py` | （模块未提供 docstring） | `SystemTrayManager` |
 | `pet/ui/tic_tac_toe_panel.py` | 井字棋棋盘面板 — 继承 GamePanelBase，负责棋盘渲染与点击落子。 | `TicTacToePanel` |
 | `pet/ui/twenty_questions_panel.py` | 二十问面板 — 桌宠提问猜东西，用户在面板点击"是/否/不确定"作答， | `TwentyQuestionsPanel` |
 | `pet/version_check.py` | 启动时版本检查 | `get_local_version()` `_CheckWorker` `UpdateChecker` |

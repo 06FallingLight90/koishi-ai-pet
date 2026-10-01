@@ -1,15 +1,15 @@
 # 工具开发指南
 
 工具（Tool）是桌宠调用外部能力的方式：一个工具目录 = 一组可被 LLM 调用的方法。
-本文讲**怎么写一个工具**；现有工具的机械清单（分组、方法、参数）见
+本文覆盖**工具的编写方式**；现有工具的机械清单（分组、方法、参数）见
 [reference/tools.md](reference/tools.md)，工具目录的约定也是
 [architecture.md](architecture.md) §11 的第 8 条红线。
 
-想跑测试与提交，见 [../CONTRIBUTING.md](../CONTRIBUTING.md)。
+测试与提交规范见 [../CONTRIBUTING.md](../CONTRIBUTING.md)。
 
 ## 目录结构
 
-在 `pet/tools/` 下新建目录：
+工具目录落在 `pet/tools/` 下：
 
 ```
 pet/tools/my_tool/
@@ -58,7 +58,7 @@ def register(registry):
 - 其余分组默认不激活：模型先用 `tool_search` 的 `list_groups` / `search(keyword)` 探索，
   匹配到哪个分组就激活哪个，之后该组工具才进入它的工具列表
 
-当前分组与各组包含的工具见 [reference/tools.md](reference/tools.md)（生成物，随代码更新，别手抄）。
+当前分组与各组包含的工具见 [reference/tools.md](reference/tools.md)（生成物，随代码更新，不手工抄录）。
 
 ## 参数定义
 
@@ -142,10 +142,10 @@ def alert() -> dict:
 | `register_tick(name, callback)` | 注册随调度器执行的周期回调 |
 | `register_alarm(timestamp_ms, callback, key=None)` | 注册一次性闹钟（只存内存，重启即丢；timer 工具能跨重启是它自己落库、启动时重新注册的） |
 
-`note_event` 适合定时器、待办、对局这类「已经发生的事」——同类型只保留最近一次，超出保鲜窗口后不再注入：
+`note_event` 适合定时器、待办、对局这类「已经发生的事」 - 同类型只保留最近一次，超出保鲜窗口后不再注入：
 
 ```python
-TOOL_CTX.note_event("timer", "你设的「吃药」定时器响了")
+TOOL_CTX.note_event("timer", "「吃药」定时器响了")
 ```
 
 ## aside 通用参数
@@ -156,7 +156,7 @@ TOOL_CTX.note_event("timer", "你设的「吃药」定时器响了")
 
 ## 启用与禁用
 
-在 `settings.json`（`pet/config.py` 的 `TOOLS_ENABLED`）中配置：
+启用清单写在 `settings.json` 的 `TOOLS_ENABLED`（定义见 `pet/config.py`）：
 
 ```json
 "TOOLS_ENABLED": ["my_tool", "weather"]
@@ -171,11 +171,11 @@ TOOL_CTX.note_event("timer", "你设的「吃药」定时器响了")
 - **超时保护**：handler 在**单独一条线程**里执行并带 `timeout` 兜底，超时后返回错误（不用线程池）
 - **异常隔离**：handler 抛异常会被捕获并转成错误信息给模型，不影响主流程
 - **序列化友好**：返回的 dict 必须能被 `json.dumps(ensure_ascii=False)` 序列化
-- **不要在导入期做重活**：工具被加载时就会 import，浏览器类工具应把重依赖延迟到调用时
-- **跨平台**：路径、通知、系统接口都要考虑 Windows / macOS / Linux
+- **导入期不做重活**：工具被加载时就会 import，浏览器类工具的重依赖延迟到调用时
+- **跨平台**：路径、通知、系统接口都要覆盖 Windows / macOS / Linux
 
-## 写完之后
+## 完成后的收尾
 
-1. 跑测试：`python -m pytest`（工具相关的用例参考 `tests/test_tools_registry.py`）
-2. 重新生成参考表：`python scripts/gen_docs.py`（会刷新 [reference/tools.md](reference/tools.md)）
-3. 记得在新工具的文档/说明里写清副作用（会不会改用户文件、联网、开浏览器）
+1. 测试：`python -m pytest`（工具相关的用例参考 `tests/test_tools_registry.py`）
+2. 参考表重新生成：运行 `python scripts/gen_docs.py`（会刷新 [reference/tools.md](reference/tools.md)）
+3. 新工具的文档/说明需写清副作用（是否改用户文件、联网、开浏览器）

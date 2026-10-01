@@ -2,7 +2,7 @@
 
 ## 按目的选路径
 
-| 我想… | 读这些 |
+| 目标 | 读这些 |
 |---|---|
 | 安装、配置模型、用内置工具 | [../README.md](../README.md) |
 | 建立整体心智模型：线程怎么跑、一次决策经过什么 | [architecture.md](architecture.md) |
@@ -33,12 +33,12 @@
 | [reference/prompt-blocks.md](reference/prompt-blocks.md) | 事实参考 | 生成 | 提示词块、感知段/任务段组合、合法组合白名单 | `pet/brain/prompts.py` |
 | [reference/modules.md](reference/modules.md) | 事实参考 | 生成 | 每个模块的一句话职责 | 模块 docstring |
 | [subsystems/context-and-prompts.md](subsystems/context-and-prompts.md) | 架构解释 | 手写 | 上下文与提示词组装、三条任务的差异、动态块生命周期 | 改提示词结构时人工更新 |
-| [subsystems/memory.md](subsystems/memory.md) | 架构解释 | 手写 | 记忆数据模型、写入与召回、维护与容量、坑 | 改记忆策略时人工更新 |
+| [subsystems/memory.md](subsystems/memory.md) | 架构解释 | 手写 | 记忆数据模型、写入与召回、维护与容量、陷阱 | 改记忆策略时人工更新 |
 | [subsystems/vitals-and-mood.md](subsystems/vitals-and-mood.md) | 架构解释 | 手写 | 数值来源、衰减、阈值信号、到提示词的映射 | 改数值手感时人工更新 |
 | [subsystems/actions-and-animation.md](subsystems/actions-and-animation.md) | 架构解释 | 手写 | 动作链路、队列与超时、帧动画的加载与运行、粒子 | 改动作系统时人工更新 |
 | [subsystems/assets-pipeline.md](subsystems/assets-pipeline.md) | 事实参考 | 手写 | 素材规格、目录与命名、配置字段契约、入库检查清单 | 改素材规格或流程时人工更新 |
 | [operations/release.md](operations/release.md) | 操作指南 | 手写 | 版本与 tag、更新脚本行为、发布检查清单、变更记录 | 改发布流程时人工更新 |
-| [operations/troubleshooting.md](operations/troubleshooting.md) | 操作指南 | 手写 | 现象对照表、诊断命令、上报要带什么 | 遇到新坑时补充 |
+| [operations/troubleshooting.md](operations/troubleshooting.md) | 操作指南 | 手写 | 现象对照表、诊断命令、上报所需信息 | 遇到新问题时补充 |
 | [decisions/](decisions/README.md) | 决策记录 | 手写 | 设计决策记录（ADR），索引见该目录的 README | 做出取舍时新增一条 |
 | [specs/2026-09-29-context-injection-pool-unify-design.md](specs/2026-09-29-context-injection-pool-unify-design.md) | 设计文档 | 手写 | 候选池容量与每轮注入上限合并的根因、方案取舍、被否决的备选方案 | 动手前写，落地后补齐结论 |
 | [specs/2026-09-29-context-injection-pool-unify-plan.md](specs/2026-09-29-context-injection-pool-unify-plan.md) | 实施计划 | 手写 | 该改动拆成的任务、每步的命令与验收标准 | 执行时逐项勾选 |
@@ -60,9 +60,10 @@
 - **生成物**：`python scripts/gen_docs.py` 重新生成 [reference/](reference/)；
   `python scripts/gen_docs.py --check` 只校验，不一致返回退出码 1（CI 里跑的就是它，见 `tests/test_docs.py`）。
   生成文件开头有「请勿手工编辑」标记，手工改动会被下一次生成覆盖。
-- **手写文档**：没有自动校验，改动相关代码时请一并更新；`tests/test_docs.py` 会保证
-  每个包都在 `architecture.md` 的模块职责表里出现过、文档内的相对链接都指向存在的文件。
-- 生成的文档里不含时间戳与版本号：内容只由代码决定，否则 `--check` 永远报脏。
+- **手写文档**：没有生成式校验，改动相关代码时需同步更新；`tests/test_docs.py` 会保证
+  每个包都在 `architecture.md` 的模块职责表里出现过、文档内的相对链接都指向存在的文件，
+  文风约定（无人称、陈述句、破折号写法）由 `tests/test_docs.py` 的 `test_handwritten_docs_style` 检查。
+- 生成的文档里不含时间戳与版本号：内容只由代码决定，否则 `--check` 永远判定为不一致。
 - **变更记录**：`python scripts/gen_changelog.py` 从 git 历史生成 [`CHANGELOG.md`](../CHANGELOG.md)，
   发布前刷新一次；它不接 CI，原因见 [operations/release.md](operations/release.md) §4。
 - **ADR**：做出设计取舍时在 [decisions/](decisions/README.md) 新增一条，并在该目录 README 的索引里登记
@@ -73,6 +74,22 @@
 
 ## 三条捷径
 
-1. 第一次读代码：先看 `architecture.md` §1 的图与 §4 的数据流，再按 §9 找包。
-2. 想加功能：直接看 `architecture.md` §12「常见改动入口」。
-3. 不确定改动是否踩线：看 `architecture.md` §11「关键约定与不变量」。
+1. 初次阅读代码：`architecture.md` §1 的分层图与 §4 的决策数据流给出全局，`§9` 用于按包定位职责。
+2. 新增功能：`architecture.md` §12「常见改动入口」给出改动位置与连带步骤。
+3. 判断改动是否踩线：`architecture.md` §11「关键约定与不变量」列出红线，其中已由测试守住的部分标注了 rule id。
+
+## 文风约定
+
+手写文档统一遵守下面几条，评审与 `tests/test_docs.py` 都按此检查：
+
+- **无人称**：不写「你」「您」这类第二人称，也不写命令句（「请先运行…」）；
+  事实与后果用陈述句表达（「运行…会重新生成…」）。提示词章节名等被引用为术语的原文（如「你惦记着的事」）保留不变。
+- **陈述优先**：规则能一句话说清时不拆成祈使步骤；确需顺序时用编号列表，条目本身仍写陈述句。
+- **标题名词化**：小标题写主题（「配置项参考」「发布检查清单」），不写动作指令。
+- **破折号统一为 ` - `**：行文中不用 `——` / `—`。
+- **不用拟人化与口语化形容**：写机制本身，不写「打架」「白拿」「断片」「跑偏」「吞掉」「孤儿配置」
+  这类比喻或俏皮话，改用准确的因果描述（「两处指令冲突」「凭空多出加成」「上下文突然中断」
+  「台词偏离事件」「丢失产出」「无引用配置」）。
+  已经是通用技术术语的说法保留（如饥饿 starvation、兜底、看门狗、设计债），产品文案（感受描述、台词）也不在此列。
+- **单句段落合并**：相邻的单句段落能合并时合并，避免零碎断点。
+- **不重复**：同一事实只在一个权威位置展开，其余位置保留结论与链接，角色分工见上文「角色边界」。

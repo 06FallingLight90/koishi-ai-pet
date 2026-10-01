@@ -27,7 +27,7 @@
 | 窗口属性动画（`move_to` / `bounce` / `fade_in` / `fade_out`） | `QPropertyAnimation.finished` | **无**（只靠 finished） |
 | `drive` | 自定义 `walk_finished` 信号 | 有 |
 | 帧动画（驻留类） | `PetAnimator.animation_finished` | 有 |
-| 素材缺失导致起不来 | `not anim.is_playing` → 立即推进，不干等 | — |
+| 素材缺失导致起不来 | `not anim.is_playing` → 立即推进，不干等 | 不适用 |
 
 超时时长：`max(1000, ACTION_TIMEOUT_MS)`，带 `duration` 的动作是 `duration*1000 + 2000`。
 `clear()` / `stop()` / `pause()` **不算完成**，不会发 `action_finished`（拖拽打断即走这条）；
@@ -50,15 +50,15 @@
 
 **队列与重力联动**：下落中队列 `pause()`，落地 `resume()` 并喷 `dust`；动作结束时先手动跑一次重力 tick，
 若恰好进入下落则「先结算、再挂起」；拖拽时 `pause + clear + grabbed()`，松手 `resume()`，
-速度超过 80px/s 会 `apply_impulse()` 甩出去。
+速度超过 80px/s 会以 `apply_impulse()` 抛出。
 
 ## 3. 帧动画的加载与运行
 
 素材侧契约（目录、命名、json 字段与取值）见 [assets-pipeline.md](assets-pipeline.md) §2；
-这里只讲运行期怎么消费它：
+本节只覆盖运行期的消费方式：
 
 - **tick 与 FPS 耦合**：一个 tick = `round(1000 / PET_FPS)` ms（默认 15 FPS → 67ms），
-  所以 `tick_counts × tick` 决定一次循环或一次性播放的时长——改 `PET_FPS` 会整体改变动画速度。
+  所以 `tick_counts × tick` 决定一次循环或一次性播放的时长 - 改 `PET_FPS` 会整体改变动画速度。
 - **容错都在加载期静默修**：`frame_ratios` 与帧数对不上（或有非正数）→ 丢弃改等分；
   长度对但总和偏离 1 超过 0.01 → 按比例归一化；`tick_counts` 非正或小于帧数 → 抬到帧数；
   `breath` 数值越界 → 夹紧到边界，类型不对才整块忽略。以上都只打 warning，画面上看不出被改过。
@@ -71,7 +71,7 @@
 
 - 注册表是 `particle.py` 的 `_SPAWNERS`（10 个特效）；默认纵向位置在 `ParticleWidget._DEFAULT_Y`，
   未登记的特效按宠物窗口高度的 1/3 兜底，`dust` 用 `-1` 表示脚底。
-- 粒子窗口比宠物大 `_MARGIN = 100px`，**超出即被裁**——`fish` 的上浮高度就是按这条约束反推的
+- 粒子窗口比宠物大 `_MARGIN = 100px`，**超出即被裁** - `fish` 的上浮高度就是按这条约束反推的
   （1.4px/tick × 1.5s ≈ 70px，保证 emoji 完整淡出）。
 - tick 30ms；前 70% 生命周期不透明，后 30% 线性淡出；空且无加载动画时自动停表并隐藏。
 - 触发来源：
@@ -83,24 +83,24 @@
 - 调试面板：「粒子特效测试」按钮由 `ParticleWidget.effect_names()` 自动生成（新增特效无需改面板）；
   「动画测试」列出 `available_actions()` 并可选 FPS 与循环。
 
-## 5. 不变量与坑
+## 5. 不变量与陷阱
 
-**加一个新动作**要同步的地方（漏哪一步会怎样）：
+**新增动作**需要同步的位置与漏改后果：
 
-| 步骤 | 漏了会怎样 |
+| 步骤 | 漏改后果 |
 |---|---|
 | 放素材 `assets/actions/<name>/` + 同名 json（契约与检查清单见 [assets-pipeline.md](assets-pipeline.md) §2、§3） | `play()` 返回 False，动作被队列跳过（打 warning） |
 | 在 `PetActions` 写方法 | 反射取不到 → 静默跳过（不报错） |
 | 在 `pet/action/registry.py` 注册（带时长还要进 `_DURATION_ACTION_DEFS`） | 模型输出这个动作名会被丢弃 |
 | 可选：`_ACTION_PARTICLES`（特效）、`ACTION_VITALS_DELTA`（消耗）、`outcome.register()`（产出） | 无特效 / 不消耗 / 无事件 |
-| 跑 `python scripts/gen_docs.py` | `tests/test_docs.py` 的漂移检查会红 |
+| 运行 `python scripts/gen_docs.py` | `tests/test_docs.py` 的漂移检查会失败 |
 
-**加一个新粒子特效**：只需登记 `_SPAWNERS`（需要非默认位置再补 `_DEFAULT_Y`），调试面板自动列出；
+**新增粒子特效**只需登记 `_SPAWNERS`（需要非默认位置再补 `_DEFAULT_Y`），调试面板自动列出；
 若希望某个动作触发，还需在 `_ACTION_PARTICLES` 或产出的 `effect` 里引用同名。
 
 其它容易踩的：
 
-1. **属性动画路径没有超时保护**，只靠 `finished`；写新的位移动作时注意。
+1. **属性动画路径没有超时保护**，只靠 `finished`；新增位移动作时需自行保证结束时机。
 2. **动作名 ≠ 素材目录名**：`walk` → `walk_left/right`、`drive` → `driving_left/right`；
    `fade_in/fade_out` 没有素材；`idle` / `falling` / `grim` / `grabbed` 是系统动画，不在动作注册表里。
 3. **`grim` 不是模型能输出的动作**，由理智驱动切换。

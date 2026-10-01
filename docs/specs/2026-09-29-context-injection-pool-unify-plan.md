@@ -17,7 +17,7 @@
 ## Global Constraints
 
 - 合并后的统一上限沿用 `CONTEXT_HISTORY_ENTRIES` 现有默认值 **15**，不改变默认的每轮上下文体验（spec §2）。
-- `pet/brain/base.py::get_multi_turn_messages` 方法体本次**不改动**——它的条数裁剪逻辑不是死代码，仍在被真实触发，删掉会丢失"优先保护摘要/系统消息"的行为（spec §3，这一节记录了一次自我纠错，务必先读）。
+- `pet/brain/base.py::get_multi_turn_messages` 方法体本次**不改动** - 它的条数裁剪逻辑不是死代码，仍在被真实触发，删掉会丢失"优先保护摘要/系统消息"的行为（spec §3，这一节记录了一次自我纠错，务必先读）。
 - 不修改 `pet/brain/behavior.py`（`_llm_summarize` / `_flush_pending_summaries` 逻辑不变）。
 - `pet/brain/context_builder.py` 原判为"调用参数不变"，被 Task 3 推翻：两处多轮构建入口的
   `max_entries` 改为 `self._brain._MAX_POOL_ENTRIES`（其余一行不动）。
@@ -25,7 +25,7 @@
 
 ---
 
-## Task 1: 合并候选池上限到 `CONTEXT_HISTORY_ENTRIES`，删除孤儿配置
+## Task 1: 合并候选池上限到 `CONTEXT_HISTORY_ENTRIES`，删除无引用配置
 
 **Files:**
 - Modify: `pet/config.py:96` （删除 `CONTEXT_MAX_ENTRIES` 一行）、`pet/config.py:98` （删除 `CONTEXT_MAX_SUMMARIES` 一行）
@@ -73,13 +73,13 @@ class TestPoolCapUnified:
 
 Run: `pytest tests/test_context_pipeline.py::TestPoolCapUnified -v`
 
-Expected: 4 个测试全部 FAIL——
+Expected: 4 个测试全部 FAIL：
 - `test_max_entries_follows_history_entries_config`：`assert 30 == 5`（`_MAX_ENTRIES` 现在还读的是 `CONTEXT_MAX_ENTRIES` 的真实默认值 30）
 - `test_pool_size_stays_bounded_by_history_entries`：`assert 20 <= 11`（旧代码里池子上限是 30，20 次写入还远不会触发淘汰）
 - `test_orphan_config_keys_removed`：`DID NOT RAISE <class 'AttributeError'>`（这两个 key 现在还在 `_KEY_META` 里）
 - `test_max_summaries_property_removed`：`assert not True`（`_MAX_SUMMARIES` 属性现在还存在）
 
-- [x] **Step 3: 修改 `pet/config.py`，删除两个孤儿 key**
+- [x] **Step 3: 修改 `pet/config.py`，删除两个无引用 key**
 
 打开 `pet/config.py`，第 96、98 行当前是：
 
@@ -146,7 +146,7 @@ Expected: 4 个测试全部 PASS。
 
 Run: `grep -rn "CONTEXT_MAX_ENTRIES\|CONTEXT_MAX_SUMMARIES" pet/ tests/ --include="*.py"`
 
-Expected: 无输出（如果有输出，说明还有遗漏的引用点需要处理，不要继续下一步）。
+Expected: 无输出（有输出则说明还有遗漏的引用点，需先处理再进入下一步）。
 
 - [x] **Step 8: 跑一次全量上下文测试文件，确认没有回归**
 
@@ -267,8 +267,8 @@ git commit -m "fix(context): _evict_context 的 base_limit 加下界，避免负
 
 **Global Constraints 补充**：
 - `get_multi_turn_messages` 的方法体仍然**不动**（spec §3 补记），只改调用方传的数值。
-- 不给工具调用加条数配额（spec §7 排除的调参范围）——因此 `_MAX_POOL_ENTRIES` **不是**池子的
-  硬上界，注释里必须写清这一点，不要留一个"池子必然不超过它"的错误断言。
+- 不给工具调用加条数配额（spec §7 排除的调参范围） - 因此 `_MAX_POOL_ENTRIES` **不是**池子的
+  硬上界，注释里需写清这一点，不留"池子必然不超过它"的错误断言。
 
 - [x] **Step 1: 在 `tests/test_context_pipeline.py` 末尾追加失败测试**
 
@@ -282,7 +282,7 @@ git commit -m "fix(context): _evict_context 的 base_limit 加下界，避免负
 
 Run: `pytest tests/test_context_pipeline.py::TestInjectionCoversWholePool -v`
 
-Expected: 3 个测试全部 FAIL——前两个 `AttributeError: _MAX_POOL_ENTRIES`；
+Expected: 3 个测试全部 FAIL - 前两个 `AttributeError: _MAX_POOL_ENTRIES`；
 `test_builders_request_whole_pool` 为 `assert [5, 5] == [11, 11]`（两个调用点还在传
 `CONTEXT_HISTORY_ENTRIES` 的真实值 5）。
 
@@ -297,7 +297,7 @@ Expected: 3 个测试全部 FAIL——前两个 `AttributeError: _MAX_POOL_ENTRI
         return self._MAX_ENTRIES + self._EVICT_BATCH_SIZE
 ```
 
-（docstring 要写清"不是硬上界"的原因，见上方 Global Constraints 补充。）
+（docstring 需写清"不是硬上界"的原因，见上方 Global Constraints 补充。）
 
 - [x] **Step 4: 改 `pet/brain/context_builder.py` 两处调用**
 
@@ -340,19 +340,19 @@ git commit -m "fix(context): 每轮注入按池子常态上界取条数，清零
 
 **与计划的偏差 1**：Task 1 Step 1 的 `test_pool_size_stays_bounded_by_history_entries` 原文断言
 `brain.context_count() <= brain._MAX_ENTRIES + _EVICT_BATCH_SIZE`。旧实现下 `_MAX_ENTRIES` 读的是
-`CONTEXT_MAX_ENTRIES=30`，上界 36，20 条写入恒成立——这个断言用被测实现自证其行为，**改动前就是绿的**，
+`CONTEXT_MAX_ENTRIES=30`，上界 36，20 条写入恒成立 - 这个断言用被测实现自证其行为，**改动前就是绿的**，
 没有起到 TDD 的失败验证作用（Step 2 预期里写的 `assert 20 <= 11` 与代码实际行为不符）。已改为对照
 `config.CONTEXT_HISTORY_ENTRIES + BrainMixin._EVICT_BATCH_SIZE`，改动前稳定失败、改动后通过。
 
 **与计划的偏差 2**：`CONTEXT_HISTORY_ENTRIES` 的 description 由「每轮注入上下文数量上限」改为
-「每轮注入上下文数量上限(同时也是候选池容量)」——它现在实际承担两个职责，字段说明若不提一句，
+「每轮注入上下文数量上限(同时也是候选池容量)」 - 它现在实际承担两个职责，字段说明若不提一句，
 读 `settings-schema.json` 的人不会知道它还是池子容量。计划 Step 3 给的替换文本里没包含这一处，
 属于执行时的补充。
 
-**与计划的偏差 3（Task 3，重要）**：Task 3 的动因里有一句推断是错的——"池子本身已经是一个最多到
+**与计划的偏差 3（Task 3，重要）**：Task 3 的动因里有一句推断是错的 - "池子本身已经是一个最多到
 `_MAX_ENTRIES + _EVICT_BATCH_SIZE` 的有界容器，传这个上界后条数裁剪分支会**数值上必然闲置**"。
 实测推翻：工具调用没有独立条数配额，`base_limit = max(0, _MAX_ENTRIES - len(summaries) - len(tool_calls))`
-算的是**普通对话**的配额，摘要 + 近期工具调用占满 `_MAX_ENTRIES` 之后普通对话配额归零、工具调用想塞多少塞多少：
+算的是**普通对话**的配额，摘要 + 近期工具调用占满 `_MAX_ENTRIES` 之后普通对话配额归零、工具调用条数不受该配额约束：
 
 ```
 连写 25 条 [工具调用] → 池子 = 25 条（上界 21）

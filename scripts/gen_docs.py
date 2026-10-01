@@ -661,7 +661,7 @@ def _module_summary(tree: ast.Module) -> str:
             class_doc = ast.get_docstring(node) or ""
             if class_doc.strip():
                 return class_doc.strip().splitlines()[0].strip()
-    return "—"
+    return "（模块未提供 docstring）"
 
 
 def _top_symbols(tree: ast.Module) -> str:

@@ -7,9 +7,9 @@
 - **版本号唯一真源是 `pyproject.toml` 的 `version`**；桌面端显示的版本、启动时的更新检查都读它
   （`pet/version_check.py` 会退回包元数据读取）。
 - tag 形式是 `vX.Y.Z`（仓库现存 26 个，从 `v1.0.0` 到 `v1.5.4`），与 `pyproject.toml` 的 `version` 对应。
-- 版本号不出现在生成文档里（`docs/reference/*` 不含版本号，否则每次发版文档检查都会报脏）。
+- 版本号不出现在生成文档里（`docs/reference/*` 不含版本号，否则每次发版文档检查都会判定为不一致）。
 
-## 2. 用户是怎么拿到新版本的
+## 2. 用户侧获取新版本的过程
 
 ```
 用户运行 update.sh / update.bat
@@ -43,11 +43,11 @@
 >
 > 上表是 rsync 分支的行为；`update.sh` 在没有 rsync 的机器上退回 cp 复制，那条路径只排除
 > `.git`/`venv`/`logs`/`__pycache__`/`config.json`/`.deps_installed`/更新脚本自身。Release
-> 源码包里本来就没有 db 和日志文件，所以实际无影响，但别依赖这一点。
+> 源码包里本来就没有 db 和日志文件，所以实际无影响，但这一点不作为依赖前提。
 
-上面这张表管的是「别覆盖用户数据」；源码包**本身**不含哪些文件由 `.gitattributes` 的
+上表管的是「不覆盖用户数据」；源码包**本身**不含哪些文件由 `.gitattributes` 的
 `export-ignore` 决定（测试、CI、文档、生成脚本、`CONTRIBUTING.md`），两者是两回事。
-改完可以用 `git ls-files | git check-attr --stdin export-ignore` 看哪些文件被排除。
+排除结果可用 `git ls-files | git check-attr --stdin export-ignore` 查看。
 
 ### 更新脚本自身的更新
 
@@ -84,9 +84,9 @@ python scripts/gen_changelog.py --check    # 只校验，不写入
 - 不接 CI：每次提交都会改动「未发布」小节，若放进 CI 检查，每个 PR 都得重新生成一次变更记录。
   它的正确用法是发布时刷新（第 3 节第 5 步）。
 
-## 5. 不要做的事
+## 5. 发布禁区
 
-- **不要移动或删除已发布的 tag**：更新脚本按 tag 下载源码包，用户可能正停在某个 tag 上。
-- **不要在 Release 里附加修改过的源码包**：脚本下载的是 GitHub 按 tag 生成的 zip。
-- **不要跳过版本号就发 Release**：用户侧的版本比较以 `releases/latest` 的 tag 与 `pyproject.toml` 为准，
+- **已发布的 tag 不移动、不删除**：更新脚本按 tag 下载源码包，用户可能正停在某个 tag 上。
+- **Release 不附加修改过的源码包**：脚本下载的是 GitHub 按 tag 生成的 zip。
+- **版本号不变时不发 Release**：用户侧的版本比较以 `releases/latest` 的 tag 与 `pyproject.toml` 为准，
   版本没变则脚本直接退出。

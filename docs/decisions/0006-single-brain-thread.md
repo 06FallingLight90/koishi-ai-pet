@@ -17,7 +17,7 @@
 - **同一时刻只允许一条脑线程**：启动新线程前先 `_cancel_running_thread`（置取消标志 + `quit()` + 有限等待）
   并 `_retire` 旧线程；`_retire` 只持有引用（放进 `_retired` 列表），**绝不析构仍在运行的 QThread**；
 - **协作式取消**：`_cancel_flag` 与世代号 `_active_stream_id`，旧管线在下一个轮询点自行退出；
-- **抢不到就让路**：`Behavior` 内部 `RLock` 拿不到时不排队——autonomous/interact 降级本地兜底，chat 回固定台词；
+- **抢锁失败即降级**：`Behavior` 内部 `RLock` 拿不到时不排队，autonomous/interact 降级本地兜底，chat 回固定台词；
 - **看门狗兜底**：超过 `BRAIN_STUCK_TIMEOUT`（默认 300 秒）无进展时取消线程（退休延迟到下一轮）、
   用 `state_machine.force(IDLE)` 绕过迁移表复位状态，再通知用户。
 

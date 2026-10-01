@@ -54,7 +54,7 @@
 | **动作分类** | `移动` / `驻留` / `显隐` 三类，只影响提示词里的展示顺序 | 同上 |
 | **时长动作** | 需要指定秒数的动作（`sit`、`sleep`、`thinking`…），可用范围随调度间隔动态计算 | `registry._DURATION_ACTION_DEFS` |
 | **动作队列（ActionQueue）** | 串行动作播放器：一个动作播完再播下一个，带超时兜底 | `pet/action/action_queue.py` |
-| **重力系统（GravitySystem）** | 让桌宠下落、站在窗口边缘、被甩出去 | `pet/action/gravity.py` |
+| **重力系统（GravitySystem）** | 让桌宠下落、站在窗口边缘、被抛出 | `pet/action/gravity.py` |
 | **动作产出（outcome）** | 动作正常结束后按规则结算的额外结果（一次性事件或窗口期事件），钓鱼玩法由此接入 | `pet/action/outcome.py` |
 | **帧动画配置** | 每个动作目录下的 `<name>.json`：`desc`、`tick_counts`（循环总 tick）、`frame_ratios`（每帧占比，和=1.0，按文件名排序对应）、`loop`、`note` | `pet/ui/pet_animations.py` |
 | **呼吸（breath）** | 帧动画上叠加的姿态：`amplitude`（位移 px，≤4）、`scale_x`/`scale_y`（0.5~2.0）、`period_ticks` | 同上 |

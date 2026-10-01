@@ -135,7 +135,7 @@ LAYER_BY_PACKAGE = {
 }
 ```
 
-第一版不要试图建立完整有向无环图，只拦截 `docs/architecture.md` §11.13 那条硬红线：
+第一版不建立完整有向无环图，只拦截 `docs/architecture.md` §11.13 那条硬红线：
 
 - `pet.tools.*` 不允许 import `pet.ui.*` / `pet.agent.*`；
 - `pet.brain.*` 不允许 import `pet.ui.*` / `pet.agent.*`；
@@ -152,7 +152,7 @@ LAYER_BY_PACKAGE = {
 
 - 工具驱动 UI / 动作 / 记忆：使用 `pet.tools.context.TOOL_CTX`；
 - 需要装配真实实现：在 `pet/app.py` 的 `main()` 中接线；
-- 需要动作名：依赖 `pet.action.registry`，不要依赖 UI 动画实现；
+- 需要动作名：依赖 `pet.action.registry`，不依赖 UI 动画实现；
 - 需要配置：依赖 `pet.config.config`。
 
 ### §5.2 `ARCH002`：函数内延迟 import
@@ -338,7 +338,7 @@ allowlist 就只增不减。分工因此是：**新增条目靠人/Agent 判断�
 - 匹配键粒度由规则决定：`ARCH001` / `ARCH002` 是 `(文件, 被导入模块)`；`ARCH006` 是 `(文件, 符号)`；
   `ARCH008` 是包内环的节点集合；
 - `reason` 必填，一句话说明为什么现在还不能修；
-- `reference` 必填，指向 `docs/architecture.md` 的条款——**没有依据的条目不允许新增**；
+- `reference` 必填，指向 `docs/architecture.md` 的条款 - **没有依据的条目不允许新增**；
 - `issue` 可选。
 
 **校验流程。**
@@ -362,7 +362,7 @@ ERROR [ARCH000]: Stale allowlist entry
 ```
 
 **与「重依赖白名单」的分工。** 命中重依赖白名单（§5.2）的延迟 import 不进 allowlist，也不参与
-stale 判定——它们是长期合理形态，不存在「清偿」。
+stale 判定 - 它们是长期合理形态，不存在「清偿」。
 
 ## §6 输出格式设计
 

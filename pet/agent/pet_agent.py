@@ -9,7 +9,7 @@ from PySide6.QtCore import QObject, QThread, QThreadPool, QTimer, Signal
 from pet.brain.behavior import Behavior, BehaviorOutput
 from pet.agent.scheduler import Scheduler
 from pet.agent.scheduled_tasks import ScheduledTasks
-from pet.agent.state import StateMachine
+from pet.agent.state import StateMachine, PetState
 from pet.agent.screen_reader import ScreenReader
 from pet.brain.memory import get_memory_store
 from pet.brain.conversation_store import ConversationStore
@@ -139,7 +139,6 @@ class PetAgent(QObject):
         logger.info(f"[PetAgent] trigger_once in {delay_ms}ms (stream={stream}, screenshot={screenshot})")
 
         def _execute():
-            from pet.agent.state import PetState
             if not self.state_machine.try_transition(PetState.AUTONOMOUS):
                 logger.info(f"[PetAgent] trigger_once skipped (state={self.state_machine.state.value})")
                 return
@@ -269,7 +268,6 @@ class PetAgent(QObject):
         self._last_interact_ms[hint] = now  # 提前占位防同 hint 重复入队，_execute 去重失败时回滚
 
         def _execute():
-            from pet.agent.state import PetState
             if self.state_machine.state == PetState.INTERACTING:
                 self._last_interact_ms[hint] = last
                 logger.info("[PetAgent] interact ignored (INTERACTING)")
@@ -330,7 +328,6 @@ class PetAgent(QObject):
     def _trigger_chat(self, message: str = "", is_play_loading: bool = True,
                       thinking: bool | None = None,
                       enable_tools: bool | None = None):
-        from pet.agent.state import PetState
         if self.state_machine.state == PetState.INTERACTING:
             logger.info("[PetAgent] chat request ignored (INTERACTING)")
             return
@@ -400,7 +397,6 @@ class PetAgent(QObject):
 
     def _on_state_changed(self, state: str):
         """记录进入脑线程占用状态（autonomous/interacting）的时刻，供看门狗检测挂死。"""
-        from pet.agent.state import PetState
         if state in (PetState.AUTONOMOUS.value, PetState.INTERACTING.value):
             now = time.monotonic()
             self._brain_busy_since = now
@@ -431,7 +427,6 @@ class PetAgent(QObject):
 
     def recover_stuck_brain(self):
         """脑线程管线疑似挂死：取消并回收脑线程，强制回 IDLE，复位加载态。"""
-        from pet.agent.state import PetState
         ts = datetime.now().strftime("%H:%M:%S")
         self._cancel_running_thread(ts)
         self.state_machine.force(PetState.IDLE)
@@ -543,7 +538,6 @@ class PetAgent(QObject):
     def _on_brain_result(self, result):
         self._stop_loading()
         ts = datetime.now().strftime("%H:%M:%S")
-        from pet.agent.state import PetState
         if self.state_machine.state in (PetState.INTERACTING, PetState.AUTONOMOUS):
             self.state_machine.transition(PetState.IDLE)
 
@@ -616,7 +610,6 @@ class PetAgent(QObject):
 
     def _on_brain_error(self, msg: str):
         self._stop_loading()
-        from pet.agent.state import PetState
         if self.state_machine.state in (PetState.INTERACTING, PetState.AUTONOMOUS):
             self.state_machine.transition(PetState.IDLE)
         logger.error(f"[PetAgent] ERROR: {msg}")

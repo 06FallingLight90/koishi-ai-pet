@@ -787,7 +787,7 @@ def rule_arch008(scanner: Scanner):
             violation=f"{package} 包内存在模块级 import 环。",
             why="环让导入顺序变成隐式约束，模块无法单独加载。",
             fix="把共享状态抽到第三个模块，或把回绕的那处改成子模块直导。",
-            example="pet/brain/context_builder.py 的 from pet.brain import prompts 改直导即可断开",
+            example="把 from pet.a import b 的回绕写法改成 from pet.a.b import ... 即可断开",
             reference=f"{ARCH_DOC} §14「依赖环」",
             key=frozenset(scc),
         )
@@ -905,9 +905,6 @@ ALLOWLIST: dict[str, list[Debt]] = {
              f"{ARCH_DOC} §11.13"),
     ],
     "ARCH002": [
-        Debt(("pet/agent/pet_agent.py", "pet.agent.state"),
-             "文件头已导入 StateMachine，函数内 7 处重复 import PetState",
-             f"{ARCH_DOC} §11.15", issue=19),
         Debt(("pet/agent/pet_agent.py", "pet.game.gamebase"),
              "stop() 内延迟 import GAME；既不打断环也不推迟重依赖", f"{ARCH_DOC} §11.15"),
         Debt(("pet/app.py", "pet.self_update"),
@@ -1057,11 +1054,7 @@ ALLOWLIST: dict[str, list[Debt]] = {
         + _sym("pet/ui/system_tray.py", "self.pet", ["_agent", "_mouse_penetration"],
                "托盘直读宠物窗口内部状态", f"{ARCH_DOC} §11.14"),
     "ARCH007": [],
-    "ARCH008": [
-        Debt(frozenset({"pet.brain", "pet.brain.behavior", "pet.brain.context_builder"}),
-             "context_builder 经 from pet.brain import prompts 绕回包 __init__，改成子模块直导即可断开",
-             f"{ARCH_DOC} §14「依赖环」", issue=19),
-    ],
+    "ARCH008": [],
     "ARCH009": [
         Debt(("pet/__init__.py", "_crash_reporter"),
              "崩溃钩子要在任何 pet 模块导入前安装，测试与文档脚本用空模块顶替隔离",

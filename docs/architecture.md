@@ -291,7 +291,7 @@ system prompt 由三段拼起来：
 | `ARCH005` | 第 12、15 条：纯逻辑模块不许顶层 import Qt / 平台后端 / playwright |
 | `ARCH006` | 第 14 条跨对象私有访问（`obj._attr`、私有 import、`sys.modules[...]` 三种写法） |
 | `ARCH007` | 第 9 条素材成对 |
-| `ARCH008` | §14 登记的包内 import 环之外不再新增 |
+| `ARCH008` | 包内不得出现模块级 import 环（见 §14） |
 | `ARCH009` | 第 12 条模块级副作用：只留常量、类型、定义与注册表登记 |
 | `ARCH000` | 元规则：债还清后忘删 allowlist 条目时报出 |
 
@@ -331,16 +331,17 @@ system prompt 由三段拼起来：
 
 | 环 | 性质 | 现状与出路 |
 |---|---|---|
-| `pet.brain` → `behavior` → `context_builder` → `pet.brain` | 唯一的**真实顶层环** | `context_builder.py` 写的是 `from pet.brain import prompts`，绕回包 `__init__`；靠 Python「from 包 import 子模块」的兜底才未报错。改成 `from pet.brain.prompts import ...` 就能断开 |
 | `pet.tools.todo` ↔ `pet.tools.todo.panel` | 设计层面，靠函数内延迟 import 规避 | 面板与工具主体互相引用，出路是把共享状态抽到第三个模块 |
 
-这两处环是已登记的债；`pet.tools.todo` ↔ `panel` 靠 `ARCH006` 盯着（面板模块级回指包的
-`_instance`），模块级 import 图上的真实环只有 `pet.brain` 一处、由 `ARCH008` 冻结。冻结清单
-与全部既有债见 `tests/test_architecture_contracts.py` 的 allowlist（§11「哪些红线已经由测试守住」）。
+依赖环已全部清偿，只余 `pet.tools.todo` ↔ `panel` 一处：面板模块级回指包的 `_instance` 作为
+allowlist 条目在 `ARCH006` 下放行，出路见上表。`pet.brain` 的真实顶层环随 Issue #19 改为
+子模块直导后断开（`context_builder.py` 由 `from pet.brain import prompts` 改为
+`from pet.brain.prompts import ...`）；模块 import 图由 `ARCH008` 静态扫描，导入顺序由
+`tests/test_import_smoke.py` 的冷启动子进程覆盖。冻结清单与全部既有债见
+`tests/test_architecture_contracts.py` 的 allowlist（§11「哪些红线已经由测试守住」）。
 
-其余函数内 import 大多正当（见 §11 第 15 条）；也有随手写的，比如
-`pet_agent.recover_stuck_brain()` 里的 `from pet.agent.state import PetState` - 同一个模块在文件头
-已经导入过了。新代码不沿用这种写法。
+其余函数内 import 大多正当（见 §11 第 15 条）；无理由的（如 `pet_agent` 里 7 处重复
+import `PetState`）已随 Issue #19 清理，同类新增会由 `ARCH002` 报出违规。
 
 ### `Behavior` 的职责
 

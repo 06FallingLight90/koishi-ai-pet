@@ -5,8 +5,18 @@ import time
 from datetime import datetime
 from typing import Optional
 
-from pet.brain import prompts
 from pet.brain.base import BrainMixin
+from pet.brain.prompts import (
+    FEELING_MARKER,
+    SUMMARY_SYSTEM_PROMPT,
+    autonomous_non_vision_user_prompt,
+    autonomous_vision_user_prompt,
+    build_attention_hint,
+    build_summary_user_prompt,
+    build_system_prompt,
+    chat_non_vision_user_prompt,
+    chat_vision_user_prompt,
+)
 from pet.config import config
 
 
@@ -65,8 +75,8 @@ class ContextBuilder:
     def build_summary_messages(items: list[str]) -> list[dict]:
         """构建上下文压缩摘要的 messages。"""
         return [
-            {"role": "system", "content": prompts.SUMMARY_SYSTEM_PROMPT},
-            {"role": "user", "content": prompts.build_summary_user_prompt(items)},
+            {"role": "system", "content": SUMMARY_SYSTEM_PROMPT},
+            {"role": "user", "content": build_summary_user_prompt(items)},
         ]
 
     _MAX_WINDOWS = 10  # 窗口探测上下文最多输出的窗口数
@@ -229,9 +239,9 @@ class ContextBuilder:
         if food_line:
             ctx_str += "\n" + food_line
         if vision:
-            current_prompt = prompts.autonomous_vision_user_prompt(ctx_str)
+            current_prompt = autonomous_vision_user_prompt(ctx_str)
         else:
-            current_prompt = prompts.autonomous_non_vision_user_prompt(ctx_str)
+            current_prompt = autonomous_non_vision_user_prompt(ctx_str)
 
         messages = self._merge_system_history(system, history_msgs)
 
@@ -259,9 +269,9 @@ class ContextBuilder:
         if food_line:
             ctx += "\n" + food_line
         if vision:
-            current_prompt = prompts.chat_vision_user_prompt(user_message, ctx)
+            current_prompt = chat_vision_user_prompt(user_message, ctx)
         else:
-            current_prompt = prompts.chat_non_vision_user_prompt(user_message, ctx)
+            current_prompt = chat_non_vision_user_prompt(user_message, ctx)
 
         messages = self._merge_system_history(system, history_msgs)
 
@@ -433,7 +443,7 @@ class ContextBuilder:
 
     def _build_system(self, mode: str, task: str, user_message: str = "") -> str:
         """拼装 system prompt：感受描述 + 静态模板 + 记忆。"""
-        content = prompts.build_system_prompt(mode, task)
+        content = build_system_prompt(mode, task)
 
         # 人格驱动：始终注入当前感受到 FEELING_MARKER 锚点
         feeling = self._build_feeling()
@@ -456,9 +466,9 @@ class ContextBuilder:
         if events:
             blocks.append(f"[最近发生了什么]\n{events}")
         if blocks:
-            content = content.replace(prompts.FEELING_MARKER, "\n\n".join(blocks))
+            content = content.replace(FEELING_MARKER, "\n\n".join(blocks))
         else:
-            content = content.replace(f"\n\n{prompts.FEELING_MARKER}", "")
+            content = content.replace(f"\n\n{FEELING_MARKER}", "")
 
         if self._memory_store:
             memory_text = self._memory_store.retrieve_context(user_message)
@@ -473,7 +483,7 @@ class ContextBuilder:
             return ""
         try:
             thresholds = [int(t) for t in config.ATTENTION_THRESHOLDS]
-            return prompts.build_attention_hint(
+            return build_attention_hint(
                 self._brain.rounds_without_user, thresholds)
         except Exception:
             return ""

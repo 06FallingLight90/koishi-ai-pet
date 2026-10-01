@@ -928,7 +928,8 @@ ALLOWLIST: dict[str, list[Debt]] = {
         Debt(("pet/tools/knowledge/storage.py", "pet.tools.knowledge.chunker"),
              "add_document 内才 import 同包 chunker；非环非重依赖", f"{ARCH_DOC} §11.15"),
         Debt(("pet/tools/registry.py", "pet.brain.memory"),
-             "recall 元工具惰性 import 记忆检索器", f"{ARCH_DOC} §11.15", issue=23),
+             "recall 元工具惰性 import 记忆检索器：模块级导入会经 pet.brain.__init__ → behavior 回指本模块成环，父包隐式边不在扫描图上",
+             f"{ARCH_DOC} §11.15"),
         Debt(("pet/tools/registry.py", "pet.tools.context"),
              "_recall_search 内延迟 import TOOL_CTX；非环非重依赖", f"{ARCH_DOC} §11.15"),
         Debt(("pet/tools/registry.py", "pet.game.gamebase"),
@@ -989,8 +990,6 @@ ALLOWLIST: dict[str, list[Debt]] = {
                "队列推进要读 Actions 内部动画器与驱动收尾", f"{ARCH_DOC} §14")
         + [Debt(("pet/action/action_queue.py", "self._actions.gravity", "_tick"),
                 "动作结束前手动跑一次重力", f"{ARCH_DOC} §14; {ADR_TIMEOUT}")]
-        + [Debt(("pet/agent/pet_agent.py", "self.behavior", "_flush_pending_summaries"),
-                "daemon 线程摘要落盘直呼私有方法", f"{ARCH_DOC} §11.14", issue=23)]
         + _sym("pet/agent/scheduled_tasks.py", "self._agent",
                ["_pet_window", "_thread", "_async_brain", "_autonomous_pipeline"],
                "定时任务探活与强制收尾读 agent 内部", f"{ARCH_DOC} §11.14")
@@ -1024,10 +1023,6 @@ ALLOWLIST: dict[str, list[Debt]] = {
                 "_upsert_vector"],
                "MemoryStore 直捅 _MemoryRetriever 内部（存储与检索分层不彻底）",
                f"{ARCH_DOC} §11.14")
-        + [Debt(("pet/tools/registry.py", "_MemoryRetriever"),
-                "recall 元工具导入未公开的检索器", f"{ARCH_DOC} §11.14", issue=23)]
-        + _sym("pet/tools/registry.py", "_MemoryRetriever", ["_format_memory_time"],
-               "recall 元工具复用未公开的检索器与时间格式化", f"{ARCH_DOC} §11.14", issue=23)
         + _sym("pet/tools/__init__.py", "TOOL_REGISTRY", ["_tools"],
                "工具加载器读 TOOL_REGISTRY._tools", f"{ARCH_DOC} §14")
         + _sym("pet/ui/pet_window.py", "TOOL_REGISTRY", ["_tools"],

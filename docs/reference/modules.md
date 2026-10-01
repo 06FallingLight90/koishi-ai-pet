@@ -15,7 +15,7 @@
 | `pet/action/fishing.py` | 钓鱼判定：桌宠执行 fishing 动作时掷一次骰子，决定这轮是否有收获。 | `roll_catch()` `format_result()` `_FishingOutcome` |
 | `pet/action/gravity.py` | 模拟桌宠受重力下落，可站立在其他窗口上。 | `GravitySystem` |
 | `pet/action/outcome.py` | 动作产出（outcome） | `Outcome` `register()` `outcome_for()` `registered_actions()` |
-| `pet/action/registry.py` | 可被 LLM 调用的动作定义。 | `target_sequence_duration()` `min_action_count()` `default_duration()` `duration_range()` `ActionDef` `generate_action_section()` |
+| `pet/action/registry.py` | 可被 LLM 调用的动作定义。 | `target_sequence_duration()` `min_action_count()` `default_duration()` `has_duration()` `duration_range()` `ActionDef` |
 | `pet/agent/__init__.py` | Agent 调度层 — PetAgent 编排全流程，Scheduler 三速定时调度，StateMachine 状态机，ScreenReader 截图采集。 |  |
 | `pet/agent/pet_agent.py` | PetAgent — 编排 Brain，通过 Signal 驱动 UI。 | `BrainWorker` `PetAgent` |
 | `pet/agent/scheduled_tasks.py` | 定时任务注册与回调 | `ScheduledTasks` |

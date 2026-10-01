@@ -12,7 +12,7 @@
 | 动作名与参数校验 | `Behavior._parse_action_line`：名字不在 `ACTION_NAMES` 里直接丢弃并告警；`k=v` 与位置参数会尝试转 int |
 | 无动作兜底 | 非流式解析器会在一条 `Action` 都没有时补 `sit 5s`；流式路径没有这个兜底 |
 | 批量下发 | `PetAgent._on_brain_result`：先发 `action_batch_started`（重置本轮产出去重），再逐条 `_emit_action` |
-| 时长注入 | `PetAgent._emit_action`：动作在 `_DURATION_ACTION_DEFS` 里且没给秒数时用 `default_duration()` |
+| 时长注入 | `PetAgent._emit_action`：`has_duration()` 为真且没给秒数时用 `default_duration()` |
 | 入队 | `agent.action_requested` → `PetWindow.queue_enqueue_action` → `ActionQueue.enqueue` |
 | 调度与执行 | `ActionQueue._run_next`：`getattr(self._actions, name)` 反射调用；找不到方法静默跳过；方法抛异常时不发开始信号直接推进 |
 | 结束判定 | 见下表 |

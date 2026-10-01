@@ -44,6 +44,11 @@ def default_duration(action: str) -> int:
     return max(floor, int(target_sequence_duration() * ratio))
 
 
+def has_duration(action: str) -> bool:
+    """动作是否带时长参数（需要指定秒数）。"""
+    return action in _DURATION_ACTION_DEFS
+
+
 def duration_range(action: str) -> tuple[int, int]:
     """返回某个动作的时长范围（最小秒, 最大秒），基于调度间隔动态计算。"""
     if action not in _DURATION_ACTION_DEFS:

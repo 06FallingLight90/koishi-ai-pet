@@ -1044,7 +1044,7 @@ class Behavior(BrainMixin):
         return content, tool_calls_map
 
 
-    def _flush_pending_summaries(self):
+    def flush_summaries(self):
         """将上下文淘汰产生的待摘要条目队列统一处理。
         有 LLM 就用 LLM 总结，不可用时兜底拼接。
         """

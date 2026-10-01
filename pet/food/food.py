@@ -11,7 +11,6 @@ from PySide6.QtWidgets import QApplication
 
 from pet.config import config
 from pet.tools.context import TOOL_CTX
-from pet.ui.food_window import FOOD_SIZE, FoodWindow
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +18,35 @@ logger = logging.getLogger(__name__)
 _SPAWN_MARGIN = 200
 # 判定轮询间隔（ms）
 _TICK_MS = 200
+
+# 食物种类真源：emoji 池与名称映射（food_window 反向引用）
+FOOD_EMOJIS = ["🍰", "🍙", "🍎", "🍜", "🍗", "🍩", "🍕", "🍓", "🥟", "🍣"]
+FOOD_NAMES = {
+    "🍰": "蛋糕", "🍙": "饭团", "🍎": "苹果", "🍜": "拉面", "🍗": "鸡腿",
+    "🍩": "甜甜圈", "🍕": "披萨", "🍓": "草莓", "🥟": "饺子", "🍣": "寿司",
+}
+
+# 食物窗口尺寸（px）：生成范围与碰撞判定共用（food_window 反向引用）
+FOOD_SIZE = 64
+
+
+def pick_emoji(food_type: str | None = None) -> str:
+    """按模型指定的食物类型选 emoji；未指定或未知则随机。"""
+    if food_type:
+        for emoji, name in FOOD_NAMES.items():
+            if name == food_type:
+                return emoji
+    return random.choice(list(FOOD_EMOJIS))
+
+
+def name_of(emoji: str) -> str:
+    """emoji 对应的中文食物名，未知时返回「食物」。"""
+    return FOOD_NAMES.get(emoji, "食物")
+
+
+def _side_text(direction: str) -> str:
+    """方向 → 中文侧词；Action 参数仍用 left/right。"""
+    return "右侧" if direction == "right" else "左侧"
 
 
 class FoodManager(QObject):
@@ -46,6 +74,7 @@ class FoodManager(QObject):
 
         self._food: Optional[dict] = None
         self._food_window = None
+        self._window_factory = None  # 装配期由 app 注入（见 set_window_factory）
 
         self._tick_timer = None  # 主线程绑定后创建
 
@@ -162,8 +191,8 @@ class FoodManager(QObject):
                     "ttl_seconds": remaining,
                 }
 
-            emoji = FoodWindow.pick_emoji(food_type)
-            name = FoodWindow.name_of(emoji)
+            emoji = pick_emoji(food_type)
+            name = name_of(emoji)
 
             # 生成范围：屏幕可用区内，左右留 20px
             left, top, right, bottom = self._screen_geo
@@ -206,7 +235,7 @@ class FoodManager(QObject):
             self.spawn_ui_requested.emit(food_id, emoji, x, y)
 
             return {
-                "summary": f"已生成{name}，在你{direction}侧 {dx}px，{height_hint}",
+                "summary": f"已生成{name}，在你{_side_text(direction)} {dx}px，{height_hint}",
                 "success": True,
                 "food_id": food_id,
                 "food_type": name,
@@ -238,9 +267,22 @@ class FoodManager(QObject):
             expired = elapsed > f["ttl"]
             remaining = max(0, int(f["ttl"] - elapsed))
             arrived = self._arrived(self._pet_x, self._pet_y, f["x"], f["y"])
+            if expired:
+                summary = (f"{f['name']}已经过期，即将自动消失。"
+                           f"不用再过去吃；想吃就调用 food__spawn 重新生成，否则直接输出最终回复即可。")
+            elif arrived:
+                summary = (f"{f['name']}已经在你身边（到达进食范围）。"
+                           f"无需再移动，直接输出最终回复即可，会自动开吃。")
+            else:
+                jump = ""
+                if bounce_height > 0:
+                    jump = f"；需要跳起来时用 Action: bounce {direction} 水平距离 高度 {bounce_height}"
+                summary = (f"{f['name']}在你{_side_text(direction)} {dx}px，{height_hint}，{remaining}秒后过期。"
+                           f"下一步输出最终回复即可，其中带上移动 Action 靠近它："
+                           f"Action: walk {direction} 水平距离（500-1000 之间取值）{jump}；"
+                           f"到达后自动开吃，不必再调用本工具。")
             return {
-                "summary": f"{f['name']}在你{direction}侧 {dx}px，{height_hint}，"
-                           f"{'已经到达可以吃了' if arrived else '还没到，继续走'}，{remaining}秒后过期",
+                "summary": summary,
                 "success": True,
                 "has_food": True,
                 "food_id": f["id"],
@@ -257,10 +299,17 @@ class FoodManager(QObject):
                 "ttl_seconds": remaining,
             }
 
+    def set_window_factory(self, factory):
+        """装配期注入窗口工厂（emoji, x, y → 窗口对象）；窗口须在主线程构造。"""
+        self._window_factory = factory
+
     def _spawn_ui(self, food_id: str, emoji: str, x: int, y: int):
-        """主线程：创建食物窗口。"""
+        """主线程：调用注入的窗口工厂创建食物窗口。"""
+        if self._window_factory is None:
+            logger.warning(f"[Food] window factory not injected; skip food window ({food_id})")
+            return
         try:
-            self._food_window = FoodWindow(emoji, x, y)
+            self._food_window = self._window_factory(emoji, x, y)
         except Exception as e:
             logger.warning(f"[Food] FoodWindow create failed ({food_id}): {e}")
 

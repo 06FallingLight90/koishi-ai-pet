@@ -897,9 +897,6 @@ RULE_FUNCS = {
 
 ALLOWLIST: dict[str, list[Debt]] = {
     "ARCH001": [
-        Debt(("pet/food/food.py", "pet.ui.food_window"),
-             "FoodManager 直接创建 FoodWindow 并共用 FOOD_SIZE；出路是注入窗口工厂，由 pet/app.py 装配",
-             f"{ARCH_DOC} §11.13", issue=20),
         Debt(("pet/tools/context.py", "pet.db"),
              "db_path() 钩子内延迟 import pet.db；出路是装配期注入路径提供者，保持 TOOL_CTX 零依赖",
              f"{ARCH_DOC} §11.13"),

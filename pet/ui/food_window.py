@@ -1,24 +1,13 @@
 """觅食的食物悬浮窗 — 纯展示组件，生命周期由 FoodManager 管理。"""
 
 import logging
-import random
 
 from PySide6.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve
-from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QLabel, QWidget
 
-from pet.config import config
+from pet.food.food import FOOD_SIZE
 
 logger = logging.getLogger(__name__)
-
-FOOD_EMOJIS = ["🍰", "🍙", "🍎", "🍜", "🍗", "🍩", "🍕", "🍓", "🥟", "🍣"]
-FOOD_NAMES = {
-    "🍰": "蛋糕", "🍙": "饭团", "🍎": "苹果", "🍜": "拉面", "🍗": "鸡腿",
-    "🍩": "甜甜圈", "🍕": "披萨", "🍓": "草莓", "🥟": "饺子", "🍣": "寿司",
-}
-
-# 食物窗口尺寸（px）
-FOOD_SIZE = 64
 
 
 class FoodWindow(QWidget):
@@ -94,17 +83,3 @@ class FoodWindow(QWidget):
 
         self._disappear_anim.finished.connect(_finish)
         self._disappear_anim.start()
-
-    @staticmethod
-    def pick_emoji(food_type: str | None = None) -> str:
-        """按模型指定的食物类型选 emoji；未指定或未知则随机。"""
-        if food_type:
-            for emoji, name in FOOD_NAMES.items():
-                if name == food_type:
-                    return emoji
-        return random.choice(list(FOOD_EMOJIS))
-
-    @staticmethod
-    def name_of(emoji: str) -> str:
-        """emoji 对应的中文食物名，未知时返回「食物」。"""
-        return FOOD_NAMES.get(emoji, "食物")

@@ -169,6 +169,11 @@ def main():
     music_bubble = MusicBubble(window)
     window.set_music_bubble(music_bubble)
 
+    # 觅食窗口：装配层注入窗口工厂，food 层不依赖 UI
+    from pet.food.food import FOOD
+    from pet.ui.food_window import FoodWindow
+    FOOD.set_window_factory(FoodWindow)
+
     # 游戏面板：由 game__play 跨线程驱动渲染
     from pet.ui.tic_tac_toe_panel import TicTacToePanel
     from pet.ui.rps_panel import RpsPanel

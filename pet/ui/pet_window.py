@@ -3,7 +3,7 @@ import logging
 import sys
 
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QMenu
-from PySide6.QtCore import Qt, QPoint, QDateTime, QTimer, QSize
+from PySide6.QtCore import Qt, QPoint, QPointF, QDateTime, QTimer, QSize
 from PySide6.QtGui import QMouseEvent, QAction, QPainter, QPainterPath, QColor, QPen
 from pet.ui.base_window import TransparentWindow
 from pet.ui.pet_animations import PetAnimator
@@ -70,9 +70,9 @@ class _SpriteLabel(QLabel):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._pose: tuple[int, float, float] = (0, 1.0, 1.0)
+        self._pose: tuple[float, float, float] = (0, 1.0, 1.0)
 
-    def set_pose(self, dy: int, scale_x: float, scale_y: float):
+    def set_pose(self, dy: float, scale_x: float, scale_y: float):
         pose = (dy, scale_x, scale_y)
         if pose != self._pose:
             self._pose = pose
@@ -100,7 +100,8 @@ class _SpriteLabel(QLabel):
         painter.translate(anchor_x, anchor_y)
         painter.scale(scale_x, scale_y)
         painter.translate(-anchor_x, -anchor_y)
-        painter.drawPixmap(left, top, pixmap)
+        # QPointF 重载支持亚像素定位：浮点呼吸位移平滑渲染，不取整成方波
+        painter.drawPixmap(QPointF(left, top), pixmap)
         painter.end()
 
 
